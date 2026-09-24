@@ -15,7 +15,7 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     MCEditRowText,     /* 文本（进程名 / 备注） */
     MCEditRowNumber,   /* 数字（限额 / nice / CPU） */
     MCEditRowSwitch,   /* 开关 */
-    MCEditRowOption,   /* 跳子页选择 */
+    MCEditRowOption,   /* 焦点下方选择 */
 };
 
 @interface MCEditRow : NSObject
@@ -88,6 +88,38 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
 - (void)toggle { if (self.onToggle) self.onToggle(self.sw.isOn); }
 @end
 
+@interface MCJetsamMenu : UITableViewController <UIPopoverPresentationControllerDelegate>
+@property (nonatomic, copy) void (^onPick)(NSNumber *value);
+@property (nonatomic, strong) NSNumber *selected;
+@end
+
+@implementation MCJetsamMenu
+- (instancetype)init {
+    self = [super initWithStyle:UITableViewStylePlain];
+    if (self) self.preferredContentSize = CGSizeMake(300, 5 * 44);
+    return self;
+}
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    return MCPriorityBands().count;
+}
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"band"];
+    if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"band"];
+    NSNumber *value = MCPriorityBands()[path.row];
+    cell.textLabel.text = MCPriorityNames()[path.row];
+    cell.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
+    cell.accessoryType = [value isEqual:self.selected] ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
+    return cell;
+}
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
+    NSNumber *value = MCPriorityBands()[path.row];
+    [self dismissViewControllerAnimated:YES completion:^{ if (self.onPick) self.onPick(value); }];
+}
+- (UIModalPresentationStyle)adaptivePresentationStyleForPresentationController:(UIPresentationController *)controller {
+    return UIModalPresentationNone;
+}
+@end
+
 /* ------------------------------------------------------------------  编辑器 */
 
 @interface MCProcessEditViewController () <UITableViewDataSource, UITableViewDelegate>
@@ -113,8 +145,10 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
 
     [self buildRows];
     [self setupTable];
-    if (self.creating) self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
-        initWithBarButtonSystemItem:UIBarButtonSystemItemSave target:self action:@selector(saveNewProcess)];
+    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc]
+        initWithBarButtonSystemItem:UIBarButtonSystemItemCancel target:self action:@selector(cancelEditing)];
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
+        initWithBarButtonSystemItem:UIBarButtonSystemItemSave target:self action:@selector(saveProcess)];
 }
 
 - (void)chooseIdentifier {
@@ -127,7 +161,11 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     [self.navigationController pushViewController:picker animated:YES];
 }
 
-- (void)saveNewProcess {
+- (void)cancelEditing {
+    [self dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)saveProcess {
     [self.view endEditing:YES];
     NSString *identifier = [self.targetIdentifier stringByTrimmingCharactersInSet:
         [NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -140,20 +178,18 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     }
     NSMutableDictionary *prefs = [MCPrefs readPrefs];
     NSMutableDictionary *apps = [prefs[@"AppConfigs"] mutableCopy] ?: [NSMutableDictionary dictionary];
-    if (apps[identifier]) {
+    if (apps[identifier] && ![identifier isEqualToString:self.originalIdentifier]) {
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"进程已添加"
             message:identifier preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
         [self presentViewController:alert animated:YES completion:nil];
         return;
     }
+    if (self.originalIdentifier.length) [apps removeObjectForKey:self.originalIdentifier];
     apps[identifier] = [self.config copy];
     prefs[@"AppConfigs"] = apps;
     [MCPrefs writePrefs:prefs wakeDaemon:YES];
-    if (self.navigationController.viewControllers.count > 1)
-        [self.navigationController popViewControllerAnimated:YES];
-    else
-        [self dismissViewControllerAnimated:YES completion:nil];
+    [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 - (void)buildRows {
@@ -193,14 +229,13 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
 }
 
 - (void)setupTable {
-    self.table = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleGrouped];
+    self.table = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
     self.table.dataSource = self;
     self.table.delegate = self;
     self.table.rowHeight = UITableViewAutomaticDimension;
     self.table.estimatedRowHeight = 64;
     [self.table registerClass:[MCFieldCell class] forCellReuseIdentifier:@"field"];
     [self.table registerClass:[MCSwitchCell class] forCellReuseIdentifier:@"switch"];
-    [self.table registerClass:[UITableViewCell class] forCellReuseIdentifier:@"plain"];
     self.table.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.table];
     [NSLayoutConstraint activateConstraints:@[
@@ -211,33 +246,15 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     ]];
 }
 
-/* ------------------------------------------------------------------ 写回 */
-
-- (void)persist {
-    if (self.creating) return;
-    NSString *identifier = [self.targetIdentifier
-        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-    if (identifier.length == 0) return;
-
-    NSMutableDictionary *prefs = [MCPrefs readPrefs];
-    NSMutableDictionary *apps = [prefs[@"AppConfigs"] mutableCopy] ?: [NSMutableDictionary dictionary];
-    [apps removeObjectForKey:self.originalIdentifier];
-    self.targetIdentifier = identifier;
-    self.originalIdentifier = identifier;
-    apps[identifier] = [self.config copy];
-    prefs[@"AppConfigs"] = apps;
-    /* 改完就叫醒守护进程：用户填完限额期待的是「立刻生效」，不是等下一轮巡检。 */
-    [MCPrefs writePrefs:prefs wakeDaemon:YES];
-}
+/* ------------------------------------------------------------------ 暂存编辑 */
 
 - (void)commitTextForRow:(MCEditRow *)row text:(NSString *)text {
     if ([row.key isEqualToString:@"__identifier"]) {
         self.targetIdentifier = text;
-        [self persist];
         self.title = self.creating ? @"添加进程" : @"编辑进程";
         return;
     }
-    if ([row.key isEqualToString:@"Remark"]) { self.config[row.key] = text ?: @""; [self persist]; return; }
+    if ([row.key isEqualToString:@"Remark"]) { self.config[row.key] = text ?: @""; return; }
 
     NSScanner *scanner = [NSScanner scannerWithString:text ?: @""];
     NSInteger parsed = 0;
@@ -252,7 +269,6 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     } else {
         self.config[row.key] = @0;   /* 解析不动就按「不设置」处理，避免误填把限额改成 0 以外的值 */
     }
-    [self persist];
 }
 
 /* ------------------------------------------------------------------ 数据源 */
@@ -278,7 +294,7 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
         c.textLabel.text = row.title;
         c.textLabel.numberOfLines = 0;
         c.sw.on = [self.config[row.key] boolValue];
-        c.onToggle = ^(BOOL on) { ws.config[row.key] = @(on); [ws persist]; };
+        c.onToggle = ^(BOOL on) { ws.config[row.key] = @(on); };
         return c;
     }
 
@@ -306,12 +322,13 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
         return c;
     }
 
-    UITableViewCell *c = [tv dequeueReusableCellWithIdentifier:@"plain" forIndexPath:path];
+    UITableViewCell *c = [tv dequeueReusableCellWithIdentifier:@"plain"];
+    if (!c) c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"plain"];
     c.textLabel.text = row.title;
     c.textLabel.numberOfLines = 0;
     if (row.kind == MCEditRowOption) {
         c.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-        c.detailTextLabel.text = [NSString stringWithFormat:@"%d", [self.config[row.key] intValue]];
+        c.detailTextLabel.text = [NSString stringWithFormat:@"%ld", (long)[self.config[row.key] integerValue]];
     }
     return c;
 }
@@ -351,23 +368,19 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
 
     if (row.kind != MCEditRowOption) return;
 
-    UIAlertController *menu = [UIAlertController alertControllerWithTitle:row.title
-        message:nil preferredStyle:UIAlertControllerStyleActionSheet];
-    NSArray<NSNumber *> *values = MCPriorityBands();
-    NSArray<NSString *> *titles = MCPriorityNames();
+    MCJetsamMenu *menu = [MCJetsamMenu new];
+    menu.selected = self.config[row.key];
+    menu.modalPresentationStyle = UIModalPresentationPopover;
+    UIPopoverPresentationController *popover = menu.popoverPresentationController;
+    popover.delegate = menu;
+    popover.sourceView = [tv cellForRowAtIndexPath:path];
+    popover.sourceRect = CGRectMake(tv.bounds.size.width - 120, 0, 90, 44);
+    popover.permittedArrowDirections = UIPopoverArrowDirectionUp;
     __weak typeof(self) ws = self;
-    for (NSUInteger i = 0; i < values.count; i++) {
-        NSNumber *value = values[i];
-        NSString *title = [self.config[row.key] isEqual:value]
-            ? [titles[i] stringByAppendingString:@" ✓"] : titles[i];
-        [menu addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
-            handler:^(UIAlertAction *action) {
-                ws.config[row.key] = value;
-                [ws persist];
-                [ws.table reloadData];
-            }]];
-    }
-    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    menu.onPick = ^(NSNumber *value) {
+        ws.config[row.key] = value;
+        [ws.table reloadRowsAtIndexPaths:@[path] withRowAnimation:UITableViewRowAnimationNone];
+    };
     [self presentViewController:menu animated:YES completion:nil];
 }
 

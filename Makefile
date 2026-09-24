@@ -35,8 +35,8 @@ BUNDLE_NAME = ProcessGuardianPrefs
 ProcessGuardianPrefs_FILES = \
 	Sources/prefs/MCPrefs.m \
 	Sources/prefs/MCAppProcessCell.m \
+	Sources/prefs/MCRootProcessCell.m \
 	Sources/prefs/ProcessGuardianPrefsListController.m \
-	Sources/prefs/MCProcessListViewController.m \
 	Sources/prefs/MCAppListViewController.m \
 	Sources/prefs/MCProcessEditViewController.m \
 	Sources/prefs/MCLogViewController.m \

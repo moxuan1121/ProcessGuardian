@@ -10,6 +10,7 @@
 #import <UIKit/UIKit.h>
 #import <Preferences/PSListController.h>
 #import <Preferences/PSSpecifier.h>
+#import <Preferences/PSTableCell.h>
 #import "MCPrefs.h"
 
 /** 列表排序方式，值存在偏好域的 SortMode 键里，由列表页读取后应用。 */
@@ -24,13 +25,11 @@ typedef NS_ENUM(NSInteger, MCListSortMode) {
 - (void)configureWithTitle:(NSString *)title subtitle:(NSString *)subtitle running:(BOOL)running;
 @end
 
-/** 根面板：只放静态项（开关、入口按钮），动态进程列表交给 MCProcessListViewController。 */
-@interface ProcessGuardianPrefsListController : PSListController
+@interface MCRootProcessCell : PSTableCell
 @end
 
-/** 进程列表页：搜索、排序、新增、删除。 */
-@interface MCProcessListViewController : UITableViewController <UISearchResultsUpdating,
-                                                               UISearchControllerDelegate>
+/** 根面板：设置项和已添加进程一起展示。 */
+@interface ProcessGuardianPrefsListController : PSListController
 @end
 
 /** 选择要纳管的对象（已安装 App / 正在运行的进程）。 */

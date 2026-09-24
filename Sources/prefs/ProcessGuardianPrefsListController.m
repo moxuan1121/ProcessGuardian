@@ -12,7 +12,8 @@
 static NSString *const kSortKey     = @"SortMode";
 static NSString *const kLogLimitKey = @"LogSizeLimit";
 
-@interface ProcessGuardianPrefsListController () <UIDocumentPickerDelegate>
+@interface ProcessGuardianPrefsListController () <UIDocumentPickerDelegate, UISearchResultsUpdating>
+@property (nonatomic, strong) UISearchController *processSearch;
 @end
 
 @implementation ProcessGuardianPrefsListController
@@ -56,15 +57,12 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
             NSMutableDictionary *p = [MCPrefs readPrefs];
             p[kSortKey] = @(i);
             [MCPrefs writePrefs:p wakeDaemon:NO];
-            [ws alertWithMessage:@"排序已更新"];
+            ws->_specifiers = nil;
+            [ws reloadSpecifiers];
         }]];
     }
     [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
-}
-
-- (void)showProcessList {
-    [self presentProcessSheet:[MCProcessListViewController new]];
 }
 
 - (void)addNewProcess {
@@ -77,13 +75,7 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:controller];
     nav.modalPresentationStyle = UIModalPresentationPageSheet;
     nav.sheetPresentationController.detents = @[UISheetPresentationControllerDetent.largeDetent];
-    controller.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc]
-        initWithBarButtonSystemItem:UIBarButtonSystemItemCancel target:self action:@selector(closeProcessSheet)];
     [self presentViewController:nav animated:YES completion:nil];
-}
-
-- (void)closeProcessSheet {
-    [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 - (void)pushSection:(NSString *)className {
@@ -212,6 +204,41 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
 
 /* ---------------------------------------------------------------- 菜单 */
 
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = @"ProcessGuardian";
+    self.processSearch = [[UISearchController alloc] initWithSearchResultsController:nil];
+    self.processSearch.searchResultsUpdater = self;
+    self.processSearch.searchBar.placeholder = @"搜索进程或备注";
+    self.navigationItem.searchController = self.processSearch;
+    self.navigationItem.hidesSearchBarWhenScrolling = YES;
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
+        initWithBarButtonSystemItem:UIBarButtonSystemItemAdd target:self action:@selector(addNewProcess)];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    if (_specifiers) {
+        _specifiers = nil;
+        [self reloadSpecifiers];
+    }
+}
+
+- (NSArray<NSString *> *)sortedProcessKeys:(NSDictionary *)apps {
+    NSMutableArray<NSString *> *keys = [apps.allKeys mutableCopy];
+    NSInteger mode = [[MCPrefs readPrefs][kSortKey] integerValue];
+    [keys sortUsingComparator:^NSComparisonResult(NSString *a, NSString *b) {
+        NSInteger x = mode == MCListSortByNice ? [apps[a][@"NiceValue"] integerValue]
+                                             : [apps[a][@"JetsamPriority"] integerValue];
+        NSInteger y = mode == MCListSortByNice ? [apps[b][@"NiceValue"] integerValue]
+                                             : [apps[b][@"JetsamPriority"] integerValue];
+        if (mode != MCListSortDefault && x != y)
+            return (mode == MCListSortByNice ? x < y : x > y) ? NSOrderedAscending : NSOrderedDescending;
+        return [a localizedCaseInsensitiveCompare:b];
+    }];
+    return keys;
+}
+
 - (NSArray *)specifiers {
     if (_specifiers) return _specifiers;
     NSMutableArray *items = [NSMutableArray array];
@@ -235,7 +262,6 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
         @[@"自动清理日志", NSStringFromSelector(@selector(chooseLogLimit))],
         @[@"进程排序", NSStringFromSelector(@selector(sortProcessList))],
         @[@"添加进程", NSStringFromSelector(@selector(addNewProcess))],
-        @[@"进程列表", NSStringFromSelector(@selector(showProcessList))],
     ];
     for (NSArray *entry in buttons) {
         PSSpecifier *item = [PSSpecifier preferenceSpecifierNamed:entry[0] target:self
@@ -258,8 +284,62 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
         [item setButtonAction:NSSelectorFromString(entry[1])];
         [items addObject:item];
     }
+
+    [items addObject:[PSSpecifier groupSpecifierWithName:@"进程列表"]];
+    NSDictionary *apps = [MCPrefs readPrefs][@"AppConfigs"];
+    if (![apps isKindOfClass:[NSDictionary class]]) apps = @{};
+    NSString *query = self.processSearch.searchBar.text.lowercaseString;
+    for (NSString *key in [self sortedProcessKeys:apps]) {
+        NSDictionary *cfg = [apps[key] isKindOfClass:[NSDictionary class]] ? apps[key] : @{};
+        NSString *remark = [cfg[@"Remark"] isKindOfClass:[NSString class]] ? cfg[@"Remark"] : @"";
+        if (query.length && ![key.lowercaseString containsString:query]
+            && ![remark.lowercaseString containsString:query]) continue;
+        NSString *title = remark.length ? remark : key;
+        PSSpecifier *item = [PSSpecifier preferenceSpecifierNamed:title target:self
+            set:nil get:nil detail:nil cell:PSLinkCell edit:nil];
+        [item setProperty:[MCRootProcessCell class] forKey:@"cellClass"];
+        [item setProperty:key forKey:@"processIdentifier"];
+        [item setProperty:[NSString stringWithFormat:@"%@\n%@", key,
+                           [MCPrefs subtitleForIdentifier:key config:cfg]] forKey:@"subtitle"];
+        [items addObject:item];
+    }
     _specifiers = items;
     return _specifiers;
+}
+
+- (void)updateSearchResultsForSearchController:(UISearchController *)controller {
+    _specifiers = nil;
+    [self reloadSpecifiers];
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
+    PSSpecifier *item = [self specifierAtIndex:[self indexForIndexPath:path]];
+    NSString *key = [item propertyForKey:@"processIdentifier"];
+    if (!key.length) { [super tableView:tableView didSelectRowAtIndexPath:path]; return; }
+    [tableView deselectRowAtIndexPath:path animated:YES];
+    MCProcessEditViewController *editor = [MCProcessEditViewController new];
+    editor.targetIdentifier = key;
+    [self presentProcessSheet:editor];
+}
+
+- (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)path {
+    PSSpecifier *item = [self specifierAtIndex:[self indexForIndexPath:path]];
+    return [item propertyForKey:@"processIdentifier"] != nil;
+}
+
+- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)style
+    forRowAtIndexPath:(NSIndexPath *)path {
+    if (style != UITableViewCellEditingStyleDelete) return;
+    PSSpecifier *item = [self specifierAtIndex:[self indexForIndexPath:path]];
+    NSString *key = [item propertyForKey:@"processIdentifier"];
+    if (!key.length) return;
+    NSMutableDictionary *prefs = [MCPrefs readPrefs];
+    NSMutableDictionary *apps = [prefs[@"AppConfigs"] mutableCopy];
+    [apps removeObjectForKey:key];
+    prefs[@"AppConfigs"] = apps;
+    [MCPrefs writePrefs:prefs wakeDaemon:YES];
+    _specifiers = nil;
+    [self reloadSpecifiers];
 }
 
 @end
