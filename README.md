@@ -13,6 +13,8 @@ iOS 15–17.3 RootHide 隐根插件：在设置中管理进程的 nice 与 Jetsa
 
 ## 构建
 
+Jetsam 配置保留 0～210 的统一档位。iOS 15 写入对应的 0～21 内核档位（如配置 150 → 内核 15）；iOS 16 起使用 0～210。列表当前状态显示实际内核值，配置行显示保存的配置值，日志同时记录换算及回读结果。依据 Apple XNU [8020](https://github.com/apple-oss-distributions/xnu/blob/xnu-8020.140.41/bsd/sys/kern_memorystatus.h) 与 [8792](https://github.com/apple-oss-distributions/xnu/blob/xnu-8792.41.9/bsd/sys/kern_memorystatus.h) 的档位定义。
+
 需要 RootHide Theos 与 iOS SDK。`make package THEOS_PACKAGE_SCHEME=roothide` 输出 `iphoneos-arm64e` 的 `packages/*.deb`。GitHub Actions 中的 `Package` 工作流可手动运行，成功后在该次运行的 Artifacts 下载 deb。仅支持 RootHide 隐根环境。
 
 本工程尚需 RootHide 真机验证 SpringBoard 私有 API 的运行行为。首次测试请选非系统应用，先测试单项设置。

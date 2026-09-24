@@ -117,6 +117,11 @@ static void MCPublishStatus(BOOL enabled) {
 
 /* ------------------------------------------------------------ 内核调用封装 */
 
+static int32_t MCTargetJetsamPriority(NSInteger configured) {
+    return MCNativeJetsamPriority(configured,
+        (int)[NSProcessInfo processInfo].operatingSystemVersion.majorVersion);
+}
+
 /**
  * 回读内核对某 PID 的真实 jetsam 优先级。
  *
@@ -206,7 +211,14 @@ static void MCApplyJetsamPriority(MCProcessConfig *cfg, pid_t pid) {
     if (cfg.jetsamPriority == 0)
         MCLog(@"[内存优先级] 目标:0 -> [恢复默认, 系统接管]");
 
-    memorystatus_priority_properties_t pp = { .priority = (int32_t)cfg.jetsamPriority };
+    int32_t target = MCTargetJetsamPriority(cfg.jetsamPriority);
+    if (target < 0) {
+        MCLog(@"[内存优先级] 无效配置 PID:%d 配置:%ld，未写入", pid, (long)cfg.jetsamPriority);
+        return;
+    }
+    if (target != cfg.jetsamPriority)
+        MCLog(@"[内存优先级] 档位转换 PID:%d 配置:%ld -> 内核目标:%d", pid, (long)cfg.jetsamPriority, target);
+    memorystatus_priority_properties_t pp = { .priority = target };
     int err = memorystatus_control(MEMORYSTATUS_CMD_SET_PRIORITY_PROPERTIES, pid, 0,
                                    &pp, sizeof(pp));
     if (err != 0) {
@@ -339,7 +351,7 @@ static void MCRunSweep(BOOL force) {
             /* Lifecycle events must repair priority changes even when PID/config are unchanged. */
             int32_t actual = 0;
             if (cfg.jetsamPriority <= 0 ||
-                (MCGetKernelPriority(pid, &actual) && actual == cfg.jetsamPriority)) continue;
+                (MCGetKernelPriority(pid, &actual) && actual == MCTargetJetsamPriority(cfg.jetsamPriority))) continue;
         }
 
         MCLog(@"[守护] 目标: %@ | PID: %d", key, pid);
@@ -377,11 +389,12 @@ static void MCScheduleSweepAfter(void) {
  * 表现为「用着用着就失效」，所以这一步必须早于任何其它工作。
  */
 static void MCProtectDaemonItself(void) {
-    memorystatus_priority_properties_t pp = { .priority = JETSAM_PRIORITY_MAX };
+    memorystatus_priority_properties_t pp = { .priority = MCTargetJetsamPriority(JETSAM_PRIORITY_MAX) };
     int err = memorystatus_control(MEMORYSTATUS_CMD_SET_PRIORITY_PROPERTIES, getpid(), 0,
                                    &pp, sizeof(pp));
-    MCLog(@"[系统] 设定进程优先级 -> [内核:%s] err:%d",
-          err == 0 ? "成功" : "失败", err);
+    int error = err == 0 ? 0 : errno;
+    MCLog(@"[守护] 自身内存优先级 目标:%d 写入:%s errno:%d",
+          pp.priority, err == 0 ? "已接受" : "失败", error);
 
     errno = 0;
     if (setpriority(PRIO_PROCESS, getpid(), PRIO_MIN) == 0)

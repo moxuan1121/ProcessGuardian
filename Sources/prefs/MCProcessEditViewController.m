@@ -186,7 +186,7 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     [limits addObject:[MCEditRow rowWithKind:MCEditRowOption title:@"进程优先级 (Nice)"
                      footer:@"-20 最高优先 到 19 最低优先，默认 0" key:@"NiceValue"]];
     [limits addObject:[MCEditRow rowWithKind:MCEditRowOption title:@"内存优先级(JETSAM)"
-                     footer:@"-1 让插件不要设置；0 重新让系统接管；其余为系统内存优先级"
+                     footer:@"-1 让插件不要设置；0 重新让系统接管；其余为系统内存优先级。配置使用统一档位；iOS 15 自动换算，例如 150 对应内核值 15。列表当前状态显示内核原始值。"
                      key:@"JetsamPriority"]];
     [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"前台 CPU 上限 (%)"
                      footer:@"0 关闭；2～1000 为 CPU 百分比阈值。100% 约为单个核心满载"

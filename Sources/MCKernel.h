@@ -66,6 +66,16 @@ typedef struct {
 int memorystatus_control(uint32_t command, int32_t pid, uint32_t flags,
                          void *buffer, size_t buffersize);
 
+/* Configs retain the 0..210 scale. iOS 15 (XNU 8020) uses 0..21;
+ * iOS 16 (XNU 8792) expanded the corresponding bands by ten.
+ * -2 means invalid config, never pass it to the kernel (IDLE_HEAD there). */
+static inline int32_t MCNativeJetsamPriority(int64_t configured, int osMajor) {
+    if (configured < -1 || configured > 210) return -2;
+    if (configured <= 0 || osMajor >= 16) return (int32_t)configured;
+    if (configured % 10 != 0) return -2;
+    return (int32_t)(configured / 10);
+}
+
 /* GET_PRIORITY_LIST returns bytes copied, unlike SET commands (zero on success).
  * Apple XNU xnu-8792.61.2: memorystatus_cmd_get_priority_list. */
 static inline bool MCGetKernelPriority(pid_t pid, int32_t *priority) {
