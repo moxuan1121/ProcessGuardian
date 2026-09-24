@@ -247,7 +247,7 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
     if (_specifiers) return _specifiers;
     NSMutableArray *items = [NSMutableArray array];
 
-    PSSpecifier *group = [PSSpecifier groupSpecifierWithName:@"生效设置"];
+    PSSpecifier *group = [PSSpecifier groupSpecifierWithName:@""];
     [group setProperty:@"关闭后停止应用配置，并恢复已接管进程的优先级和内存限制。" forKey:@"footerText"];
     [items addObject:group];
     for (NSArray *entry in @[ @[@"生效开关", @"Enabled"], @[@"后台刷新", @"BackgroundRefresh"] ]) {
@@ -260,28 +260,21 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
     }
 
     [items addObject:[PSSpecifier groupSpecifierWithName:@"日志配置"]];
-    NSArray *buttons = @[
+    for (NSArray *entry in @[
         @[@"查看日志", NSStringFromSelector(@selector(showLog))],
         @[@"清空日志", NSStringFromSelector(@selector(clearLog))],
         @[@"自动清理日志", NSStringFromSelector(@selector(chooseLogLimit))],
-        @[@"进程排序", NSStringFromSelector(@selector(sortProcessList))],
-        @[@"添加进程", NSStringFromSelector(@selector(addNewProcess))],
-    ];
-    for (NSArray *entry in buttons) {
+    ]) {
         PSSpecifier *item = [PSSpecifier preferenceSpecifierNamed:entry[0] target:self
             set:nil get:nil detail:nil cell:PSButtonCell edit:nil];
         [item setButtonAction:NSSelectorFromString(entry[1])];
         [items addObject:item];
     }
 
-    group = [PSSpecifier groupSpecifierWithName:@"配置维护"];
-    [group setProperty:@"导入/导出的是 AppConfigs 整段，可跨设备迁移；「跳转配置」用 Filza 打开原始 plist。" forKey:@"footerText"];
-    [items addObject:group];
+    [items addObject:[PSSpecifier groupSpecifierWithName:@"进程配置"]];
     for (NSArray *entry in @[
-        @[@"跳转配置", NSStringFromSelector(@selector(jumpToConfig))],
-        @[@"导入配置", NSStringFromSelector(@selector(importConfig))],
-        @[@"导出配置", NSStringFromSelector(@selector(exportConfig))],
-        @[@"恢复配置", NSStringFromSelector(@selector(restoreConfig))],
+        @[@"进程排序", NSStringFromSelector(@selector(sortProcessList))],
+        @[@"添加进程", NSStringFromSelector(@selector(addNewProcess))],
     ]) {
         PSSpecifier *item = [PSSpecifier preferenceSpecifierNamed:entry[0] target:self
             set:nil get:nil detail:nil cell:PSButtonCell edit:nil];
@@ -300,11 +293,26 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
             && ![remark.lowercaseString containsString:query]) continue;
         NSString *title = remark.length ? remark : key;
         PSSpecifier *item = [PSSpecifier preferenceSpecifierNamed:title target:self
-            set:nil get:nil detail:nil cell:PSLinkCell edit:nil];
+            set:nil get:nil detail:[PSListController class] cell:PSLinkCell edit:nil];
         [item setProperty:[MCRootProcessCell class] forKey:@"cellClass"];
         [item setProperty:key forKey:@"processIdentifier"];
         [item setProperty:[NSString stringWithFormat:@"%@\n%@", key,
                            [MCPrefs subtitleForIdentifier:key config:cfg]] forKey:@"subtitle"];
+        [items addObject:item];
+    }
+
+    group = [PSSpecifier groupSpecifierWithName:@"配置维护"];
+    [group setProperty:@"导入/导出的是 AppConfigs 整段，可跨设备迁移；「跳转配置」用 Filza 打开原始 plist。" forKey:@"footerText"];
+    [items addObject:group];
+    for (NSArray *entry in @[
+        @[@"跳转配置", NSStringFromSelector(@selector(jumpToConfig))],
+        @[@"导入配置", NSStringFromSelector(@selector(importConfig))],
+        @[@"导出配置", NSStringFromSelector(@selector(exportConfig))],
+        @[@"恢复配置", NSStringFromSelector(@selector(restoreConfig))],
+    ]) {
+        PSSpecifier *item = [PSSpecifier preferenceSpecifierNamed:entry[0] target:self
+            set:nil get:nil detail:nil cell:PSButtonCell edit:nil];
+        [item setButtonAction:NSSelectorFromString(entry[1])];
         [items addObject:item];
     }
     _specifiers = items;
@@ -321,6 +329,16 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
     NSString *key = [item propertyForKey:@"processIdentifier"];
     if (!key.length) { [super tableView:tableView didSelectRowAtIndexPath:path]; return; }
     [tableView deselectRowAtIndexPath:path animated:YES];
+    [self openEditorForIdentifier:key];
+}
+
+- (void)tableView:(UITableView *)tableView accessoryButtonTappedForRowWithIndexPath:(NSIndexPath *)path {
+    PSSpecifier *item = [self specifierAtIndex:[self indexForIndexPath:path]];
+    NSString *key = [item propertyForKey:@"processIdentifier"];
+    if (key.length) [self openEditorForIdentifier:key];
+}
+
+- (void)openEditorForIdentifier:(NSString *)key {
     MCProcessEditViewController *editor = [MCProcessEditViewController new];
     editor.targetIdentifier = key;
     [self presentProcessSheet:editor];

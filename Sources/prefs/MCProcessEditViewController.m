@@ -2,7 +2,7 @@
  * MCProcessEditViewController.m —— 单条配置的编辑器。
  *
  * 不用 PSListController 而是手搓 tableView：这一页要同时放文本框、开关，以及一个
- * 需要跳子页选择的 Jetsam band 列表。用 specifier 驱动就得为每个控件现造
+ * 需要底部菜单选择的优先级列表。用 specifier 驱动就得为每个控件现造
  * PSSpecifier，还得依赖 PreferenceLoader 未文档化的 Detail 传递机制。
  *
  * 字段说明文案与原面板逐字对齐 —— 它们是用户判断该不该勾的依据，不能改写。
@@ -13,9 +13,9 @@
 
 typedef NS_ENUM(NSInteger, MCEditRowKind) {
     MCEditRowText,     /* 文本（进程名 / 备注） */
-    MCEditRowNumber,   /* 数字（限额 / nice / CPU） */
+    MCEditRowNumber,   /* 数字（限额 / CPU） */
     MCEditRowSwitch,   /* 开关 */
-    MCEditRowOption,   /* 焦点下方选择 */
+    MCEditRowOption,   /* 底部菜单选择 */
 };
 
 @interface MCEditRow : NSObject
@@ -86,38 +86,6 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     return self;
 }
 - (void)toggle { if (self.onToggle) self.onToggle(self.sw.isOn); }
-@end
-
-@interface MCJetsamMenu : UITableViewController <UIPopoverPresentationControllerDelegate>
-@property (nonatomic, copy) void (^onPick)(NSNumber *value);
-@property (nonatomic, strong) NSNumber *selected;
-@end
-
-@implementation MCJetsamMenu
-- (instancetype)init {
-    self = [super initWithStyle:UITableViewStylePlain];
-    if (self) self.preferredContentSize = CGSizeMake(300, 5 * 44);
-    return self;
-}
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return MCPriorityBands().count;
-}
-- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
-    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"band"];
-    if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"band"];
-    NSNumber *value = MCPriorityBands()[path.row];
-    cell.textLabel.text = MCPriorityNames()[path.row];
-    cell.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
-    cell.accessoryType = [value isEqual:self.selected] ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
-    return cell;
-}
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
-    NSNumber *value = MCPriorityBands()[path.row];
-    [self dismissViewControllerAnimated:YES completion:^{ if (self.onPick) self.onPick(value); }];
-}
-- (UIModalPresentationStyle)adaptivePresentationStyleForPresentationController:(UIPresentationController *)controller {
-    return UIModalPresentationNone;
-}
 @end
 
 /* ------------------------------------------------------------------  编辑器 */
@@ -206,8 +174,8 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
                      key:@"MemLimitActive"]];
     [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"后台内存限制 (MB)"
                      footer:@"同上，作用于进程处于后台时" key:@"MemLimitInactive"]];
-    [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"进程优先级 (Nice)"
-                     footer:@"-20 最高优先 到 19 最低优先, 默认为空不设置" key:@"NiceValue"]];
+    [limits addObject:[MCEditRow rowWithKind:MCEditRowOption title:@"进程优先级 (Nice)"
+                     footer:@"-20 最高优先 到 19 最低优先，默认 0" key:@"NiceValue"]];
     [limits addObject:[MCEditRow rowWithKind:MCEditRowOption title:@"内存优先级 (Jetsam)"
                      footer:@"-1 让插件不要设置；0 重新让系统接管；其余为内核 jetsam band"
                      key:@"JetsamPriority"]];
@@ -259,10 +227,6 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     NSScanner *scanner = [NSScanner scannerWithString:text ?: @""];
     NSInteger parsed = 0;
     if ([scanner scanInteger:&parsed] && scanner.isAtEnd) {
-        /* nice 合法区间只有 -20..19，越界到了守护进程那边就是一条 EINVAL 失败日志，
-           在输入处夹住比让它报错有用。 */
-        if ([row.key isEqualToString:@"NiceValue"])
-            parsed = MAX((NSInteger)PRIO_MIN, MIN((NSInteger)PRIO_MAX - 1, parsed));
         if ([row.key isEqualToString:@"CPUThreshold"] && parsed != 0 && (parsed < 2 || parsed > 1000)) parsed = 0;
         if ([row.key isEqualToString:@"CPUDuration"] && (parsed < 1 || parsed > 3600)) parsed = 10;
         self.config[row.key] = @(parsed);
@@ -304,7 +268,7 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
         id value = [row.key isEqualToString:@"__identifier"] ? ws.targetIdentifier : ws.config[row.key];
         c.field.text = value ? [NSString stringWithFormat:@"%@", value] : @"";
         c.field.placeholder = row.title;
-        /* 限额与 nice 都可能是负数，必须用允许负号的数字键盘，不能走 UIKeyboardTypeNumberPad。 */
+        /* 内存限额可能是 -1，保留可输入负号的键盘。 */
         c.field.keyboardType = row.kind == MCEditRowNumber ? UIKeyboardTypeNumbersAndPunctuation
                                                           : UIKeyboardTypeDefault;
         if ([row.key isEqualToString:@"__identifier"] && self.creating) {
@@ -368,19 +332,30 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
 
     if (row.kind != MCEditRowOption) return;
 
-    MCJetsamMenu *menu = [MCJetsamMenu new];
-    menu.selected = self.config[row.key];
-    menu.modalPresentationStyle = UIModalPresentationPopover;
-    UIPopoverPresentationController *popover = menu.popoverPresentationController;
-    popover.delegate = menu;
-    popover.sourceView = [tv cellForRowAtIndexPath:path];
-    popover.sourceRect = CGRectMake(tv.bounds.size.width - 120, 0, 90, 44);
-    popover.permittedArrowDirections = UIPopoverArrowDirectionUp;
+    BOOL nice = [row.key isEqualToString:@"NiceValue"];
+    NSMutableArray<NSNumber *> *niceValues = [NSMutableArray array];
+    if (nice) for (NSInteger n = -20; n <= 19; n++) [niceValues addObject:@(n)];
+    NSArray<NSNumber *> *values = nice ? niceValues : MCPriorityBands();
+    NSArray<NSString *> *titles = nice ? nil : MCPriorityNames();
+    UIAlertController *menu = [UIAlertController alertControllerWithTitle:row.title message:nil
+        preferredStyle:UIAlertControllerStyleActionSheet];
     __weak typeof(self) ws = self;
-    menu.onPick = ^(NSNumber *value) {
-        ws.config[row.key] = value;
-        [ws.table reloadRowsAtIndexPaths:@[path] withRowAnimation:UITableViewRowAnimationNone];
-    };
+    for (NSUInteger i = 0; i < values.count; i++) {
+        NSNumber *value = values[i];
+        NSString *title = nice ? value.stringValue : titles[i];
+        if ([value isEqual:self.config[row.key]]) title = [title stringByAppendingString:@" ✓"];
+        [menu addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+                ws.config[row.key] = value;
+                [ws.table reloadRowsAtIndexPaths:@[path] withRowAnimation:UITableViewRowAnimationNone];
+            }]];
+    }
+    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    UIPopoverPresentationController *popover = menu.popoverPresentationController;
+    if (popover) {
+        popover.sourceView = [tv cellForRowAtIndexPath:path];
+        popover.sourceRect = popover.sourceView.bounds;
+    }
     [self presentViewController:menu animated:YES completion:nil];
 }
 
