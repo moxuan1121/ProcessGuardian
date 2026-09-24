@@ -13,7 +13,6 @@
 
 static NSString *const kSortKey     = @"SortMode";
 static NSString *const kLogLimitKey = @"LogSizeLimit";
-static NSString *const kTGChatURL   = @"https://t.me/iosdumpzzz";
 
 @interface ProcessGuardianPrefsListController () <UIDocumentPickerDelegate>
 @property (nonatomic, strong) NSArray<PSSpecifier *> *rootSpecifiers;
@@ -73,12 +72,9 @@ static NSString *const kTGChatURL   = @"https://t.me/iosdumpzzz";
 }
 
 - (void)addNewProcess {
-    MCAppListViewController *picker = [MCAppListViewController new];
-    __weak typeof(self) ws = self;
-    picker.onPick = ^(NSString *identifier) {
-        [ws addProcessWithIdentifier:identifier];
-    };
-    [self presentProcessSheet:picker];
+    MCProcessEditViewController *editor = [MCProcessEditViewController new];
+    editor.creating = YES;
+    [self presentProcessSheet:editor];
 }
 
 - (void)presentProcessSheet:(UIViewController *)controller {
@@ -92,25 +88,6 @@ static NSString *const kTGChatURL   = @"https://t.me/iosdumpzzz";
 
 - (void)closeProcessSheet {
     [self dismissViewControllerAnimated:YES completion:nil];
-}
-
-- (void)addProcessWithIdentifier:(NSString *)identifier {
-    if (identifier.length == 0) return;
-    NSMutableDictionary *prefs = [MCPrefs readPrefs];
-    NSMutableDictionary *apps = [prefs[@"AppConfigs"] mutableCopy] ?: [NSMutableDictionary dictionary];
-    NSString *clean = [identifier stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-    if (!apps[clean]) apps[clean] = [[MCProcessConfig defaultConfigForIdentifier:clean] dictionaryValue];
-    prefs[@"AppConfigs"] = apps;
-    [MCPrefs writePrefs:prefs wakeDaemon:YES];
-
-    [self pushEditForIdentifier:clean];
-}
-
-- (void)pushEditForIdentifier:(NSString *)identifier {
-    MCProcessEditViewController *vc = [MCProcessEditViewController new];
-    vc.targetIdentifier = identifier;
-    UINavigationController *nav = (UINavigationController *)self.presentedViewController;
-    [nav pushViewController:vc animated:YES];
 }
 
 - (void)pushSection:(NSString *)className {
@@ -151,14 +128,6 @@ static NSString *const kTGChatURL   = @"https://t.me/iosdumpzzz";
     }
     [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
-}
-
-- (void)openTGChat {
-    NSURL *url = [NSURL URLWithString:kTGChatURL];
-    if ([[UIApplication sharedApplication] canOpenURL:url])
-        [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
-    else
-        [self alertWithMessage:@"无法打开链接"];
 }
 
 /* ------------------------------------------------------ 导入 / 导出 / 恢复 */

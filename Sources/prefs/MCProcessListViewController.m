@@ -92,21 +92,9 @@
 }
 
 - (void)addProcess {
-    MCAppListViewController *picker = [MCAppListViewController new];
-    __weak typeof(self) ws = self;
-    picker.onPick = ^(NSString *identifier) {
-        NSMutableDictionary *prefs = [MCPrefs readPrefs];
-        NSMutableDictionary *apps = [prefs[@"AppConfigs"] mutableCopy] ?: [NSMutableDictionary dictionary];
-        if (!apps[identifier])
-            apps[identifier] = [[MCProcessConfig defaultConfigForIdentifier:identifier] dictionaryValue];
-        prefs[@"AppConfigs"] = apps;
-        [MCPrefs writePrefs:prefs wakeDaemon:YES];
-
-        MCProcessEditViewController *edit = [MCProcessEditViewController new];
-        edit.targetIdentifier = identifier;
-        [ws.navigationController pushViewController:edit animated:YES];
-    };
-    [self.navigationController pushViewController:picker animated:YES];
+    MCProcessEditViewController *edit = [MCProcessEditViewController new];
+    edit.creating = YES;
+    [self.navigationController pushViewController:edit animated:YES];
 }
 
 /* ------------------------------------------------------------------ 数据源 */

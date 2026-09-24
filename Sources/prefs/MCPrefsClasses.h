@@ -43,11 +43,12 @@ typedef NS_ENUM(NSInteger, MCListSortMode) {
 @property (nonatomic, assign) BOOL pickProcesses;
 @end
 
-/** 单条配置的编辑器：18 个字段的分组表格。 */
+/** 单条配置的编辑器。 */
 @interface MCProcessEditViewController : UIViewController <UITableViewDataSource,
                                                           UITableViewDelegate>
 /** AppConfigs 里的键（包名或进程名）。 */
 @property (nonatomic, copy) NSString *targetIdentifier;
+@property (nonatomic, assign) BOOL creating;
 @end
 
 /** 运行日志查看器。 */

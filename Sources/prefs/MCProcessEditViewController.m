@@ -59,12 +59,10 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
         [NSLayoutConstraint activateConstraints:@[
             [_field.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
             [_field.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-16],
-            [_field.widthAnchor constraintEqualToConstant:130],
+            [_field.widthAnchor constraintEqualToConstant:160],
             [_field.heightAnchor constraintEqualToConstant:30],
         ]];
-        __weak typeof(self) ws = self;
         [_field addTarget:self action:@selector(commit) forControlEvents:UIControlEventEditingDidEnd];
-        (void)ws;
     }
     return self;
 }
@@ -90,16 +88,6 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
 - (void)toggle { if (self.onToggle) self.onToggle(self.sw.isOn); }
 @end
 
-/* ------------------------------------------------------------------  Jetsam 选择子页 */
-
-@interface MCIntOptionPicker : UIViewController <UITableViewDataSource, UITableViewDelegate>
-@property (nonatomic, copy) NSString *pageTitle;
-@property (nonatomic, strong) NSArray<NSNumber *> *values;
-@property (nonatomic, strong) NSArray<NSString *> *titles;
-@property (nonatomic, assign) NSInteger currentValue;
-@property (nonatomic, copy) void (^onPick)(NSInteger value);
-@end
-
 /* ------------------------------------------------------------------  编辑器 */
 
 @interface MCProcessEditViewController () <UITableViewDataSource, UITableViewDelegate>
@@ -107,21 +95,65 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
 @property (nonatomic, strong) NSArray<NSArray<MCEditRow *> *> *sections;
 @property (nonatomic, strong) NSMutableArray<NSString *> *sectionTitles;
 @property (nonatomic, strong) NSMutableDictionary *config;
+@property (nonatomic, copy) NSString *originalIdentifier;
 @end
 
 @implementation MCProcessEditViewController
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"编辑进程";
+    self.title = self.creating ? @"添加进程" : @"编辑进程";
+    self.originalIdentifier = self.targetIdentifier;
 
-    NSDictionary *stored = [MCPrefs readPrefs][@"AppConfigs"][self.targetIdentifier];
+    NSDictionary *stored = self.targetIdentifier.length
+        ? [MCPrefs readPrefs][@"AppConfigs"][self.targetIdentifier] : nil;
     self.config = [stored isKindOfClass:[NSDictionary class]]
                   ? [stored mutableCopy]
                   : [[[MCProcessConfig defaultConfigForIdentifier:self.targetIdentifier] dictionaryValue] mutableCopy];
 
     [self buildRows];
     [self setupTable];
+    if (self.creating) self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
+        initWithBarButtonSystemItem:UIBarButtonSystemItemSave target:self action:@selector(saveNewProcess)];
+}
+
+- (void)chooseIdentifier {
+    MCAppListViewController *picker = [MCAppListViewController new];
+    __weak typeof(self) ws = self;
+    picker.onPick = ^(NSString *identifier) {
+        ws.targetIdentifier = identifier;
+        [ws.table reloadData];
+    };
+    [self.navigationController pushViewController:picker animated:YES];
+}
+
+- (void)saveNewProcess {
+    [self.view endEditing:YES];
+    NSString *identifier = [self.targetIdentifier stringByTrimmingCharactersInSet:
+        [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (!identifier.length) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"请填写进程名或包名"
+            message:nil preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+    NSMutableDictionary *prefs = [MCPrefs readPrefs];
+    NSMutableDictionary *apps = [prefs[@"AppConfigs"] mutableCopy] ?: [NSMutableDictionary dictionary];
+    if (apps[identifier]) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"进程已添加"
+            message:identifier preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+    apps[identifier] = [self.config copy];
+    prefs[@"AppConfigs"] = apps;
+    [MCPrefs writePrefs:prefs wakeDaemon:YES];
+    if (self.navigationController.viewControllers.count > 1)
+        [self.navigationController popViewControllerAnimated:YES];
+    else
+        [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 - (void)buildRows {
@@ -182,14 +214,16 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
 /* ------------------------------------------------------------------ 写回 */
 
 - (void)persist {
+    if (self.creating) return;
     NSString *identifier = [self.targetIdentifier
         stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
     if (identifier.length == 0) return;
 
     NSMutableDictionary *prefs = [MCPrefs readPrefs];
     NSMutableDictionary *apps = [prefs[@"AppConfigs"] mutableCopy] ?: [NSMutableDictionary dictionary];
-    [apps removeObjectForKey:self.targetIdentifier];
+    [apps removeObjectForKey:self.originalIdentifier];
     self.targetIdentifier = identifier;
+    self.originalIdentifier = identifier;
     apps[identifier] = [self.config copy];
     prefs[@"AppConfigs"] = apps;
     /* 改完就叫醒守护进程：用户填完限额期待的是「立刻生效」，不是等下一轮巡检。 */
@@ -200,7 +234,7 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     if ([row.key isEqualToString:@"__identifier"]) {
         self.targetIdentifier = text;
         [self persist];
-        self.title = text.length ? @"编辑进程" : @"添加新进程";
+        self.title = self.creating ? @"添加进程" : @"编辑进程";
         return;
     }
     if ([row.key isEqualToString:@"Remark"]) { self.config[row.key] = text ?: @""; [self persist]; return; }
@@ -257,6 +291,17 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
         /* 限额与 nice 都可能是负数，必须用允许负号的数字键盘，不能走 UIKeyboardTypeNumberPad。 */
         c.field.keyboardType = row.kind == MCEditRowNumber ? UIKeyboardTypeNumbersAndPunctuation
                                                           : UIKeyboardTypeDefault;
+        if ([row.key isEqualToString:@"__identifier"] && self.creating) {
+            UIButton *choose = [UIButton buttonWithType:UIButtonTypeSystem];
+            [choose setTitle:@"选择" forState:UIControlStateNormal];
+            choose.frame = CGRectMake(0, 0, 42, 30);
+            [choose addTarget:self action:@selector(chooseIdentifier)
+                forControlEvents:UIControlEventTouchUpInside];
+            c.field.rightView = choose;
+            c.field.rightViewMode = UITextFieldViewModeAlways;
+        } else {
+            c.field.rightView = nil;
+        }
         c.onCommit = ^(NSString *text) { [ws commitTextForRow:row text:text]; };
         return c;
     }
@@ -306,58 +351,24 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
 
     if (row.kind != MCEditRowOption) return;
 
-    MCIntOptionPicker *picker = [MCIntOptionPicker new];
-    picker.pageTitle = row.title;
-    picker.values = MCPriorityBands();
-    picker.titles = MCPriorityNames();
-    picker.currentValue = [self.config[row.key] integerValue];
+    UIAlertController *menu = [UIAlertController alertControllerWithTitle:row.title
+        message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    NSArray<NSNumber *> *values = MCPriorityBands();
+    NSArray<NSString *> *titles = MCPriorityNames();
     __weak typeof(self) ws = self;
-    picker.onPick = ^(NSInteger value) {
-        ws.config[row.key] = @(value);
-        [ws persist];
-        [ws.table reloadData];
-    };
-    [self.navigationController pushViewController:picker animated:YES];
-}
-
-@end
-
-/* ------------------------------------------------------------------ 选择子页实现 */
-
-@implementation MCIntOptionPicker
-
-- (void)viewDidLoad {
-    [super viewDidLoad];
-    self.title = self.pageTitle;
-    UITableView *tv = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];
-    tv.dataSource = self;
-    tv.delegate = self;
-    tv.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:tv];
-    [NSLayoutConstraint activateConstraints:@[
-        [tv.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
-        [tv.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
-        [tv.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
-        [tv.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
-    ]];
-}
-
-- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return self.titles.count; }
-
-- (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)path {
-    UITableViewCell *c = [tv dequeueReusableCellWithIdentifier:@"opt"];
-    if (!c) c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"opt"];
-    c.textLabel.text = self.titles[path.row];
-    c.textLabel.numberOfLines = 0;
-    c.accessoryType = ([self.values[path.row] integerValue] == self.currentValue)
-                      ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
-    return c;
-}
-
-- (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)path {
-    [tv deselectRowAtIndexPath:path animated:YES];
-    if (self.onPick) self.onPick([self.values[path.row] integerValue]);
-    [self.navigationController popViewControllerAnimated:YES];
+    for (NSUInteger i = 0; i < values.count; i++) {
+        NSNumber *value = values[i];
+        NSString *title = [self.config[row.key] isEqual:value]
+            ? [titles[i] stringByAppendingString:@" ✓"] : titles[i];
+        [menu addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
+            handler:^(UIAlertAction *action) {
+                ws.config[row.key] = value;
+                [ws persist];
+                [ws.table reloadData];
+            }]];
+    }
+    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:menu animated:YES completion:nil];
 }
 
 @end
