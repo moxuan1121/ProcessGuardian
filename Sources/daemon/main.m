@@ -330,6 +330,7 @@ static void MCRunSweep(BOOL force) {
 
 static dispatch_queue_t sWorkerQueue;    /* 串行：所有实际应用都在这里，天然互斥 */
 static dispatch_source_t sDebounceTimer; /* 合并短时间内重复的前台切换通知 */
+static dispatch_source_t sLaunchdForkSource;
 
 static void MCScheduleSweepAfter(void) {
     static dispatch_once_t once;
@@ -416,6 +417,16 @@ int main(int argc, const char *argv[]) {
             MCLog(@"[守护] 通知注册失败，仅依赖周期巡检");
 
         MCRunSweep(NO);
+
+        /* launchd 创建系统进程时立即复核；不对进程表做短周期轮询。 */
+        sLaunchdForkSource = dispatch_source_create(DISPATCH_SOURCE_TYPE_PROC, 1,
+                                                     DISPATCH_PROC_FORK, sWorkerQueue);
+        if (sLaunchdForkSource) {
+            dispatch_source_set_event_handler(sLaunchdForkSource, ^{ MCScheduleSweepAfter(); });
+            dispatch_resume(sLaunchdForkSource);
+        } else {
+            MCLog(@"[守护] launchd 启动事件不可用，依赖应用通知和兜底巡检");
+        }
 
         /* 1800s 兜底巡检：即使没有前台切换事件，被系统悄悄覆写的设置也会被拉回来。 */
         dispatch_source_t sweep = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, sWorkerQueue);
