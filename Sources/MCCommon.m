@@ -1,6 +1,7 @@
 #import "MCCommon.h"
 #import <dlfcn.h>
 #import <libproc.h>
+#import <libproc_internal.h>
 #import <sys/sysctl.h>
 #import <unistd.h>
 

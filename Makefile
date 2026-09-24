@@ -11,7 +11,7 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = ProcessGuardian ProcessGuardianStay
 
 ProcessGuardian_FILES = Sources/Tweak.x Sources/MCCPUGuard.m Sources/MCCommon.m
-ProcessGuardian_CFLAGS = -fobjc-arc
+ProcessGuardian_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/Sources/libproc
 ProcessGuardian_FRAMEWORKS = Foundation UIKit
 ProcessGuardian_INSTALL_PATH = /Library/MobileSubstrate/DynamicLibraries
 
@@ -24,7 +24,7 @@ ProcessGuardianStay_LIBRARIES = substrate
 TOOL_NAME = processguardiand
 
 processguardiand_FILES = Sources/daemon/main.m Sources/MCCommon.m
-processguardiand_CFLAGS = -fobjc-arc
+processguardiand_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/Sources/libproc
 processguardiand_FRAMEWORKS = Foundation
 # Theos 默认把 tool 装到 /usr/bin，LaunchDaemon 里的 Program 路径与此对应。
 processguardiand_CODESIGN_FLAGS = -CSources/daemon/memorycontrold.entitlements
@@ -42,7 +42,7 @@ ProcessGuardianPrefs_FILES = \
 	Sources/prefs/MCLogViewController.m \
 	Sources/MCCommon.m
 
-ProcessGuardianPrefs_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
+ProcessGuardianPrefs_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/Sources/libproc -Wno-deprecated-declarations
 ProcessGuardianPrefs_FRAMEWORKS = UIKit Foundation UniformTypeIdentifiers
 ProcessGuardianPrefs_INFO_PLIST = packaging/PrefsInfo.plist
 ProcessGuardianPrefs_RESOURCE_FILES = Sources/prefs/Root.plist Sources/prefs/icon.png

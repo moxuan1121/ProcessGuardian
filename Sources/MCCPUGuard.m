@@ -3,6 +3,7 @@
 #import "MCCPUGuard.h"
 #import "MCCommon.h"
 #import <libproc.h>
+#import <libproc_internal.h>
 #import <mach/mach_time.h>
 #import <notify.h>
 #import <signal.h>
