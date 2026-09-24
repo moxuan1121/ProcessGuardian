@@ -27,7 +27,7 @@ processguardiand_FILES = Sources/daemon/main.m Sources/MCCommon.m
 processguardiand_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/Sources/libproc
 processguardiand_FRAMEWORKS = Foundation
 # Theos 默认把 tool 装到 /usr/bin，LaunchDaemon 里的 Program 路径与此对应。
-processguardiand_CODESIGN_FLAGS = -CSources/daemon/memorycontrold.entitlements
+processguardiand_CODESIGN_FLAGS = -SSources/daemon/memorycontrold.entitlements
 
 # ============================================================ 3. 偏好面板 bundle
 BUNDLE_NAME = ProcessGuardianPrefs
