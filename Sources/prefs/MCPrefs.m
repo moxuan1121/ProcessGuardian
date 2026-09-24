@@ -5,7 +5,6 @@
 #import <libproc.h>
 #import <sys/resource.h>
 #import <errno.h>
-#import "../MCKernel.h"
 
 NSArray<NSNumber *> *MCPriorityBands(void) {
     return @[@(-1), @(0), @(10), @(20), @(30), @(40), @(50), @(80), @(90),
@@ -140,24 +139,17 @@ NSArray<NSString *> *MCPriorityNames(void) {
     for (NSNumber *p in MCPidsForIdentifier(key)) { pid = p.intValue; break; }
     NSString *actualPriority = @"?", *actualNice = @"?";
     if (pid > 0) {
-        memorystatus_priority_entry_t entry = {0};
-        if (memorystatus_control(MEMORYSTATUS_CMD_GET_PRIORITY_LIST, pid, 0,
-                                 &entry, sizeof(entry)) == 0)
-            actualPriority = [@(entry.priority) stringValue];
+        id processes = [MCPrefs readStatus][@"Processes"];
+        id status = [processes isKindOfClass:[NSDictionary class]] ? processes[key] : nil;
+        if (![status isKindOfClass:[NSDictionary class]]) status = nil;
+        BOOL samePid = [status[@"pid"] intValue] == pid;
+        if (samePid && [status[@"ActualJetsam"] isKindOfClass:[NSNumber class]])
+            actualPriority = [status[@"ActualJetsam"] stringValue];
         errno = 0;
         int nice = getpriority(PRIO_PROCESS, pid);
         if (errno == 0) actualNice = [@(nice) stringValue];
-        if ([actualPriority isEqualToString:@"?"] || [actualNice isEqualToString:@"?"]) {
-            id processes = [MCPrefs readStatus][@"Processes"];
-            id status = [processes isKindOfClass:[NSDictionary class]] ? processes[key] : nil;
-            if (![status isKindOfClass:[NSDictionary class]]) status = nil;
-            if ([status[@"pid"] intValue] == pid) {
-                if ([actualPriority isEqualToString:@"?"] && [status[@"ActualJetsam"] isKindOfClass:[NSNumber class]])
-                    actualPriority = [status[@"ActualJetsam"] stringValue];
-                if ([actualNice isEqualToString:@"?"] && [status[@"ActualNice"] isKindOfClass:[NSNumber class]])
-                    actualNice = [status[@"ActualNice"] stringValue];
-            }
-        }
+        else if (samePid && [status[@"ActualNice"] isKindOfClass:[NSNumber class]])
+            actualNice = [status[@"ActualNice"] stringValue];
     }
     NSInteger configuredPriority = cfg[@"JetsamPriority"] ? [cfg[@"JetsamPriority"] integerValue] : -1;
     return [NSString stringWithFormat:@"p=%@、n=%@、pid=%@\np=%ld、a=%ld、i=%ld、n=%ld、s=%d",

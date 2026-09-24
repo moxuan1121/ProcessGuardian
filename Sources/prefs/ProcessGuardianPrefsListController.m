@@ -336,7 +336,7 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)path {
     PSSpecifier *item = [self specifierAtIndex:[self indexForIndexPath:path]];
     return [item propertyForKey:@"processIdentifier"]
-        ? [UIFont preferredFontForTextStyle:UIFontTextStyleTitle3].lineHeight
+        ? [UIFont preferredFontForTextStyle:UIFontTextStyleBody].lineHeight
             + 2 * [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline].lineHeight + 24.0
         : 44.0;
 }

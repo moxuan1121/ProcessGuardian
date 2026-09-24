@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>com.apple.private.memorystatus</key>
+	<true/>
 	<!--
 	  这三项决定了本包能做到哪一步。只有 task_for_pid 是「Mach 调度前台锁定 /
 	  吞吐量提权 / 禁用 App Nap / QoS 提权」这四项的前提；缺了它守护进程会打印

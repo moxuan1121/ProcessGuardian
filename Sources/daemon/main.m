@@ -126,6 +126,7 @@ static void MCPublishStatus(BOOL enabled) {
 static BOOL MCReadKernelPriority(pid_t pid, int32_t *priority) {
     memorystatus_priority_entry_t entry;
     memset(&entry, 0, sizeof(entry));
+    entry.pid = pid;
     if (memorystatus_control(MEMORYSTATUS_CMD_GET_PRIORITY_LIST, pid, 0,
                              &entry, sizeof(entry)) != 0)
         return NO;                                  /* ESRCH：不在优先级表中 */

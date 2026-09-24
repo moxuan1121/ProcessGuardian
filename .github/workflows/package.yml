@@ -47,6 +47,9 @@ jobs:
           grep -q 'ProcessGuardianPrefs.bundle/icon@2x.png' <<<"$contents"
           grep -q 'ProcessGuardianPrefs.bundle/icon@3x.png' <<<"$contents"
           grep -q 'Library/LaunchDaemons/com.moxuan.processguardiand.plist' <<<"$contents"
+          mkdir -p "$RUNNER_TEMP/processguardian-deb"
+          dpkg-deb -x "$deb" "$RUNNER_TEMP/processguardian-deb"
+          ldid -e "$RUNNER_TEMP/processguardian-deb/usr/bin/processguardiand" | python3 -c 'import plistlib, sys; assert plistlib.load(sys.stdin.buffer).get("com.apple.private.memorystatus") is True'
           grep -q 'usr/lib/TweakInject/ProcessGuardian.dylib' <<<"$contents"
           grep -q 'usr/lib/TweakInject/ProcessGuardian.plist' <<<"$contents"
           grep -q 'usr/lib/TweakInject/ProcessGuardianStay.dylib' <<<"$contents"

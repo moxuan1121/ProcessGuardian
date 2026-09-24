@@ -7,7 +7,7 @@
     self = [super initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:identifier specifier:specifier];
     if (self) {
         self.detailTextLabel.numberOfLines = 2;
-        self.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleTitle3];
+        self.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
         self.textLabel.adjustsFontForContentSizeCategory = YES;
         self.detailTextLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
         self.detailTextLabel.adjustsFontForContentSizeCategory = YES;
