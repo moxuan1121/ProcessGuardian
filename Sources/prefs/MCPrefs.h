@@ -22,7 +22,7 @@
 /** 当前运行的进程名，去重排序。 */
 + (NSArray<NSString *> *)runningProcessNames;
 
-/** 一条配置的人类可读副标题，例如 "PID 1234 · Jetsam 180 · Nice -10"。 */
+/** 两行摘要：当前内核状态与保存的配置。 */
 + (NSString *)subtitleForIdentifier:(NSString *)key config:(NSDictionary *)cfg;
 
 @end

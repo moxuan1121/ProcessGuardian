@@ -3,6 +3,9 @@
 #import <objc/message.h>
 #import <sys/sysctl.h>
 #import <libproc.h>
+#import <sys/resource.h>
+#import <errno.h>
+#import "../MCKernel.h"
 
 NSArray<NSNumber *> *MCPriorityBands(void) {
     return @[@(-1), @(0), @(10), @(20), @(30), @(40), @(50), @(80), @(90),
@@ -135,21 +138,22 @@ NSArray<NSString *> *MCPriorityNames(void) {
 + (NSString *)subtitleForIdentifier:(NSString *)key config:(NSDictionary *)cfg {
     pid_t pid = 0;
     for (NSNumber *p in MCPidsForIdentifier(key)) { pid = p.intValue; break; }
-
-    NSMutableArray *parts = [NSMutableArray array];
-    [parts addObject:pid ? [NSString stringWithFormat:@"PID %d", pid] : @"进程未运行"];
-
-    NSInteger prio = [cfg[@"JetsamPriority"] integerValue];
-    NSInteger nice = [cfg[@"NiceValue"] integerValue];
-    if (prio != -1) [parts addObject:[NSString stringWithFormat:@"Jetsam %d", (int)prio]];
-    if (nice != 0)  [parts addObject:[NSString stringWithFormat:@"Nice %d", (int)nice]];
-
-    NSInteger act = [cfg[@"MemLimitActive"] integerValue];
-    NSInteger inact = [cfg[@"MemLimitInactive"] integerValue];
-    if (act || inact) [parts addObject:[NSString stringWithFormat:@"%@/%@MB",
-                                        [@(act) stringValue], [@(inact) stringValue]]];
-
-    return [parts componentsJoinedByString:@" · "];
+    NSString *actualPriority = @"?", *actualNice = @"?";
+    if (pid > 0) {
+        memorystatus_priority_entry_t entry = {0};
+        if (memorystatus_control(MEMORYSTATUS_CMD_GET_PRIORITY_LIST, pid, 0,
+                                 &entry, sizeof(entry)) == 0)
+            actualPriority = [@(entry.priority) stringValue];
+        errno = 0;
+        int nice = getpriority(PRIO_PROCESS, pid);
+        if (errno == 0) actualNice = [@(nice) stringValue];
+    }
+    NSInteger configuredPriority = cfg[@"JetsamPriority"] ? [cfg[@"JetsamPriority"] integerValue] : -1;
+    return [NSString stringWithFormat:@"p=%@、n=%@、pid=%@\np=%ld、a=%ld、i=%ld、n=%ld、s=%d",
+        actualPriority, actualNice, pid ? [@(pid) stringValue] : @"?",
+        (long)configuredPriority, (long)[cfg[@"MemLimitActive"] integerValue],
+        (long)[cfg[@"MemLimitInactive"] integerValue], (long)[cfg[@"NiceValue"] integerValue],
+        [cfg[@"KeepAlive"] boolValue] ? 1 : 0];
 }
 
 @end

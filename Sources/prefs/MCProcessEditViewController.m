@@ -185,7 +185,7 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
                      footer:@"同上，作用于进程处于后台时" key:@"MemLimitInactive"]];
     [limits addObject:[MCEditRow rowWithKind:MCEditRowOption title:@"进程优先级 (Nice)"
                      footer:@"-20 最高优先 到 19 最低优先，默认 0" key:@"NiceValue"]];
-    [limits addObject:[MCEditRow rowWithKind:MCEditRowOption title:@"内存优先级"
+    [limits addObject:[MCEditRow rowWithKind:MCEditRowOption title:@"内存优先级(JETSAM)"
                      footer:@"-1 让插件不要设置；0 重新让系统接管；其余为系统内存优先级"
                      key:@"JetsamPriority"]];
     [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"前台 CPU 上限 (%)"

@@ -293,7 +293,6 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
         [items addObject:item];
     }
 
-    [items addObject:[PSSpecifier groupSpecifierWithName:@"进程列表"]];
     NSDictionary *apps = [MCPrefs readPrefs][@"AppConfigs"];
     if (![apps isKindOfClass:[NSDictionary class]]) apps = @{};
     NSString *query = self.processSearch.searchBar.text.lowercaseString;
@@ -302,13 +301,13 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
         NSString *remark = [cfg[@"Remark"] isKindOfClass:[NSString class]] ? cfg[@"Remark"] : @"";
         if (query.length && ![key.lowercaseString containsString:query]
             && ![remark.lowercaseString containsString:query]) continue;
-        NSString *title = remark.length ? remark : key;
+        NSString *title = remark.length && ![remark isEqualToString:key]
+            ? [NSString stringWithFormat:@"%@ (%@)", key, remark] : key;
         PSSpecifier *item = [PSSpecifier preferenceSpecifierNamed:title target:self
             set:nil get:nil detail:[PSListController class] cell:PSLinkCell edit:nil];
         [item setProperty:[MCRootProcessCell class] forKey:@"cellClass"];
         [item setProperty:key forKey:@"processIdentifier"];
-        [item setProperty:[NSString stringWithFormat:@"%@\n%@", key,
-                           [MCPrefs subtitleForIdentifier:key config:cfg]] forKey:@"subtitle"];
+        [item setProperty:[MCPrefs subtitleForIdentifier:key config:cfg] forKey:@"subtitle"];
         [items addObject:item];
     }
 
@@ -333,6 +332,11 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
 - (void)updateSearchResultsForSearchController:(UISearchController *)controller {
     _specifiers = nil;
     [self reloadSpecifiers];
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)path {
+    PSSpecifier *item = [self specifierAtIndex:[self indexForIndexPath:path]];
+    return [item propertyForKey:@"processIdentifier"] ? 78.0 : 44.0;
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
