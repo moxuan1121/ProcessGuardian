@@ -48,7 +48,7 @@ FOUNDATION_EXPORT void SALiteLoadLaunchFrameworks(void);
 /// 0.1.7：注销后需要按顺序恢复守护的 bid，逐个错峰处理
 @property (nonatomic, strong) NSMutableArray<NSString *> *startupRecoveryQueue;
 @property (nonatomic, assign) SCNetworkReachabilityRef reachability;
-@property (nonatomic, strong) dispatch_source_t boundaryTimer;
+@property (nonatomic, strong) dispatch_source_t _Nullable boundaryTimer;
 
 + (instancetype)sharedManager;
 

@@ -177,9 +177,7 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
 - (void)saveRuntimeState
 {
     NSArray *blocked = [self.userBlocked allObjects] ?: @[];
-    NSDictionary *state = [NSDictionary dictionaryWithObjects:@[blocked]
-                                                      forKeys:@[@"userBlocked"]
-                                                        count:1];
+    NSDictionary *state = @{ @"userBlocked": blocked };
     NSString *path = [SALiteConfig sharedPathForPath:SALiteRuntimePlistPath];
     [state writeToFile:path atomically:YES];
     chmod([path fileSystemRepresentation], 0666);
@@ -210,7 +208,7 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
 {
     if (self.boundaryTimer) {
         dispatch_source_cancel(self.boundaryTimer);
-        self.boundaryTimer = nil;
+        self.boundaryTimer = NULL;
     }
     if (![SALiteConfig isGlobalEnabled]) return;
 
@@ -637,7 +635,7 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
 
 - (void)handleDeathForBundleIdentifier:(NSString *)bundleIdentifier pid:(pid_t)pid
 {
-    if (self.assertionPIDs[bundleIdentifier].intValue == pid) {
+    if ([self.assertionPIDs[bundleIdentifier] intValue] == pid) {
         [self releaseAssertionForBundleIdentifier:bundleIdentifier];
     }
     if ([self.userBlocked containsObject:bundleIdentifier]) return;

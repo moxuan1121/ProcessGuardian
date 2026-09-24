@@ -140,7 +140,7 @@ static NSArray *SALiteApplicationShortcutItems(id self, SEL _cmd)
         return original;
     }
 
-    BOOL on = [[SALiteConfig policyForBundleIdentifier:bundleIdentifier] objectForKey:@"enabled"].boolValue;
+    BOOL on = [[[SALiteConfig policyForBundleIdentifier:bundleIdentifier] objectForKey:@"enabled"] boolValue];
 
     NSMutableArray *items = original ? [original mutableCopy] : [NSMutableArray array];
 
@@ -164,7 +164,7 @@ static NSArray *SALiteApplicationShortcutItems(id self, SEL _cmd)
 
 static void SALiteActivateShortcut(id self, SEL _cmd, id shortcut, NSString *bundleIdentifier, id iconView)
 {
-    if (![[shortcut type] isEqualToString:SALiteShortcutType]) {
+    if (![[((SBSApplicationShortcutItem *)shortcut) type] isEqualToString:SALiteShortcutType]) {
         if (SALiteOriginalActivateShortcut) {
             ((void (*)(id, SEL, id, NSString *, id))SALiteOriginalActivateShortcut)(self, _cmd,
                                                                                    shortcut, bundleIdentifier, iconView);
@@ -177,7 +177,7 @@ static void SALiteActivateShortcut(id self, SEL _cmd, id shortcut, NSString *bun
     NSString *target = [value isKindOfClass:[NSString class]] ? value : bundleIdentifier;
     if (target.length == 0) return;
 
-    BOOL on = [[SALiteConfig policyForBundleIdentifier:target] objectForKey:@"enabled"].boolValue;
+    BOOL on = [[[SALiteConfig policyForBundleIdentifier:target] objectForKey:@"enabled"] boolValue];
     [SALiteConfig setValue:@(!on) forKey:@"enabled" bundleIdentifier:target];
 }
 
@@ -220,7 +220,7 @@ static void SALiteBootstrapAfter(NSTimeInterval seconds)
         [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
                                                           object:nil
                                                            queue:[NSOperationQueue mainQueue]
-                                                       usingBlock:^{
+                                                       usingBlock:^(NSNotification *notification){
             SALiteBootstrapAfter(SALiteDidFinishLaunchDelay);
         }];
         SALiteBootstrapAfter(SALiteBootstrapFallbackDelay);

@@ -11,6 +11,10 @@
 #import <Foundation/Foundation.h>
 #import <TargetConditionals.h>
 
+@interface NSObject (SALiteSpringBoardController)
+- (id)applicationWithBundleIdentifier:(NSString *)bundleIdentifier;
+@end
+
 // MARK: - RunningBoardServices
 
 @interface RBSAssertion : NSObject
