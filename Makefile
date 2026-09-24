@@ -49,7 +49,7 @@ ProcessGuardianPrefs_RESOURCE_FILES = Sources/prefs/Root.plist Sources/prefs/ico
 ProcessGuardianPrefs_INSTALL_PATH = /Library/PreferenceBundles
 # PSPrefCell / PSListController 等符号只存在于 Preferences.app 内，编译期拿不到
 # 对应库，必须让链接器放过它们，运行时再由进程自身解析。
-ProcessGuardianPrefs_LFLAGS = -undefined dynamic_lookup
+ProcessGuardianPrefs_LDFLAGS = -undefined dynamic_lookup
 
 include $(THEOS)/makefiles/tweak.mk
 include $(THEOS)/makefiles/tool.mk
