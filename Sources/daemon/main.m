@@ -91,8 +91,14 @@ static void MCRememberKey(NSString *key, pid_t pid, MCProcessConfig *cfg) {
 
 static void MCPublishStatus(BOOL enabled) {
     NSMutableDictionary *processes = [NSMutableDictionary dictionary];
-    for (NSString *key in sApplied) {
+    NSDictionary<NSString *, MCProcessConfig *> *configs = [MCCommon parsedAppConfigs];
+    for (NSString *key in configs) {
         NSMutableDictionary *entry = [sApplied[key] mutableCopy];
+        if (!entry) {
+            pid_t pid = [[MCPidsForIdentifier(key) firstObject] intValue];
+            if (pid <= 0) continue;
+            entry = [@{ @"pid": @(pid) } mutableCopy];
+        }
         pid_t pid = [entry[@"pid"] intValue];
         int32_t priority = 0;
         if (pid > 0 && MCReadKernelPriority(pid, &priority)) entry[@"ActualJetsam"] = @(priority);
