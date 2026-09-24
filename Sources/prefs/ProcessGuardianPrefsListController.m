@@ -15,7 +15,6 @@ static NSString *const kSortKey     = @"SortMode";
 static NSString *const kLogLimitKey = @"LogSizeLimit";
 
 @interface ProcessGuardianPrefsListController () <UIDocumentPickerDelegate>
-@property (nonatomic, strong) NSArray<PSSpecifier *> *rootSpecifiers;
 @end
 
 @implementation ProcessGuardianPrefsListController
@@ -219,17 +218,13 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"ProcessGuardian";
+    self.specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    if ([[MCPrefs readPrefs][@"BackgroundRefresh"] boolValue])
-        [self.tableview reloadData];
-}
-
-- (NSArray<PSSpecifier *> *)specifiers {
-    if (!_rootSpecifiers) _rootSpecifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
-    return _rootSpecifiers;
+    self.specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
+    [self.tableview reloadData];
 }
 
 @end
