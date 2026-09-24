@@ -414,6 +414,10 @@ static void MCCheckAndGenerateDefaultConfig(void) {
     if (![apps isKindOfClass:[NSDictionary class]]) apps = nil;
 
     BOOL dirty = NO;
+    if (prefs[@"BackgroundRefresh"] != nil) {
+        [prefs removeObjectForKey:@"BackgroundRefresh"];
+        dirty = YES;
+    }
     if (!apps) {
         prefs[@"AppConfigs"] = [MCCommon defaultAppConfigs];
         dirty = YES;

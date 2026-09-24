@@ -33,7 +33,7 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
     if (value == nil || [value isEqual:@""]) [prefs removeObjectForKey:key];
     else prefs[key] = value;
 
-    /* 开关和强锁直接决定守护进程要不要动手，改完就叫醒它，不必等 1800s 巡检。 */
+    /* 生效开关改完立即叫醒守护进程，不必等 1800s 巡检。 */
     BOOL wake = [key isEqualToString:@"Enabled"];
     [MCPrefs writePrefs:prefs wakeDaemon:wake];
 }
@@ -260,14 +260,12 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
     PSSpecifier *group = [PSSpecifier groupSpecifierWithName:@""];
     [group setProperty:@"关闭后停止应用配置，并恢复已接管进程的优先级和内存限制。" forKey:@"footerText"];
     [items addObject:group];
-    for (NSArray *entry in @[ @[@"生效开关", @"Enabled"], @[@"后台刷新", @"BackgroundRefresh"] ]) {
-        PSSpecifier *item = [PSSpecifier preferenceSpecifierNamed:entry[0] target:self
-            set:@selector(setPreferenceValue:specifier:) get:@selector(readPreferenceValue:)
-            detail:nil cell:PSSwitchCell edit:nil];
-        [item setProperty:entry[1] forKey:@"key"];
-        [item setProperty:@NO forKey:@"default"];
-        [items addObject:item];
-    }
+    PSSpecifier *enable = [PSSpecifier preferenceSpecifierNamed:@"生效开关" target:self
+        set:@selector(setPreferenceValue:specifier:) get:@selector(readPreferenceValue:)
+        detail:nil cell:PSSwitchCell edit:nil];
+    [enable setProperty:@"Enabled" forKey:@"key"];
+    [enable setProperty:@NO forKey:@"default"];
+    [items addObject:enable];
 
     [items addObject:[PSSpecifier groupSpecifierWithName:@"日志配置"]];
     for (NSArray *entry in @[
