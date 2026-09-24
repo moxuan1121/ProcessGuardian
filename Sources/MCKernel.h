@@ -1,10 +1,15 @@
 #ifndef MC_KERNEL_H
 #define MC_KERNEL_H
 
-#import <Foundation/Foundation.h>
-#import <sys/types.h>
+#include <sys/types.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+#include <errno.h>
 
-__BEGIN_DECLS
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* The iOS SDK omits the memorystatus_control declarations used by the daemon. */
 #ifndef MEMORYSTATUS_CMD_GET_PRIORITY_LIST
@@ -39,7 +44,7 @@ __BEGIN_DECLS
 #endif
 
 typedef struct {
-    pid_t pid;
+    int32_t pid;
     int32_t priority;
     uint64_t user_data;
     int32_t limit;
@@ -61,5 +66,23 @@ typedef struct {
 int memorystatus_control(uint32_t command, int32_t pid, uint32_t flags,
                          void *buffer, size_t buffersize);
 
-__END_DECLS
+/* GET_PRIORITY_LIST returns bytes copied, unlike SET commands (zero on success).
+ * Apple XNU xnu-8792.61.2: memorystatus_cmd_get_priority_list. */
+static inline bool MCGetKernelPriority(pid_t pid, int32_t *priority) {
+    memorystatus_priority_entry_t entry = {0};
+    errno = 0;
+    int result = memorystatus_control(MEMORYSTATUS_CMD_GET_PRIORITY_LIST, pid, 0,
+                                     &entry, sizeof(entry));
+    if (result < 0) return false;
+    if (result != (int)sizeof(entry) || entry.pid != pid) {
+        errno = EIO;
+        return false;
+    }
+    if (priority) *priority = entry.priority;
+    return true;
+}
+
+#ifdef __cplusplus
+}
+#endif
 #endif

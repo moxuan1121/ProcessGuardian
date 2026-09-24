@@ -124,14 +124,10 @@ static void MCPublishStatus(BOOL enabled) {
  * （pid != 0 时内核只回填一条 entry），少一次全表拷贝，判定结果一致。
  */
 static BOOL MCReadKernelPriority(pid_t pid, int32_t *priority) {
-    memorystatus_priority_entry_t entry;
-    memset(&entry, 0, sizeof(entry));
-    entry.pid = pid;
-    if (memorystatus_control(MEMORYSTATUS_CMD_GET_PRIORITY_LIST, pid, 0,
-                             &entry, sizeof(entry)) != 0)
-        return NO;                                  /* ESRCH：不在优先级表中 */
-    if (priority) *priority = entry.priority;
-    return YES;
+    if (MCGetKernelPriority(pid, priority)) return YES;
+    int error = errno;
+    MCLog(@"[内存优先级] 读取失败 PID:%d errno:%d (%s)", pid, error, strerror(error));
+    return NO;
 }
 
 /* ------------------------------------------------------------------ 恢复 */
@@ -178,17 +174,21 @@ static void MCApplyMemLimits(MCProcessConfig *cfg, pid_t pid) {
     int err = memorystatus_control(MEMORYSTATUS_CMD_SET_MEMLIMIT_PROPERTIES, pid, 0,
                                    &ml, sizeof(ml));
     if (err != 0) {
-        MCLog(@"[内存限制] 目标 Act:%d Inact:%d -> [失败] err:%d",
-              ml.memlimit_active, ml.memlimit_inactive, err);
+        int error = errno;
+        MCLog(@"[内存限制] PID:%d 目标 Act:%d Inact:%d -> [失败] errno:%d (%s)",
+              pid, ml.memlimit_active, ml.memlimit_inactive, error, strerror(error));
         return;
     }
 
     memorystatus_memlimit_properties_t back = {0};
     if (memorystatus_control(MEMORYSTATUS_CMD_GET_MEMLIMIT_PROPERTIES, pid, 0,
-                             &back, sizeof(back)) != 0)
-        back = ml;
+                             &back, sizeof(back)) != 0) {
+        int error = errno;
+        MCLog(@"[内存限制] 写入已接受，但回读失败 PID:%d errno:%d (%s)", pid, error, strerror(error));
+        return;
+    }
 
-    MCLog(@"[内存限制] 目标 Act:%d Inact:%d | 最终 Act:%d Inact:%d -> [成功]",
+    MCLog(@"[内存限制] 目标 Act:%d Inact:%d | 回读 Act:%d Inact:%d",
           ml.memlimit_active, ml.memlimit_inactive,
           back.memlimit_active, back.memlimit_inactive);
     if (back.memlimit_active != ml.memlimit_active ||
@@ -210,21 +210,22 @@ static void MCApplyJetsamPriority(MCProcessConfig *cfg, pid_t pid) {
     int err = memorystatus_control(MEMORYSTATUS_CMD_SET_PRIORITY_PROPERTIES, pid, 0,
                                    &pp, sizeof(pp));
     if (err != 0) {
-        MCLog(@"[系统] 内存优先级:%d -> [内核: 失败] err:%d", pp.priority, err);
+        int error = errno;
+        MCLog(@"[内存优先级] 写入失败 PID:%d 目标:%d 返回:%d errno:%d (%s)",
+              pid, pp.priority, err, error, strerror(error));
         return;
     }
-    MCLog(@"[系统] 设定进程优先级 -> [内核: 成功]");
 
     int32_t actual = 0;
     if (!MCReadKernelPriority(pid, &actual)) {
-        MCLog(@"[内存优先级] 未在内核优先级列表中找到 PID:%d", pid);
+        MCLog(@"[内存优先级] 写入已接受，但回读失败，无法确认生效 PID:%d", pid);
         return;
     }
     if (actual != pp.priority) {
-        MCLog(@"[内核] ：已被系统覆盖 (设置:%d 实际:%d)", pp.priority, actual);
-        MCLog(@"[环境适配] 目标 %d -> 实际 %d", pp.priority, actual);
+        MCLog(@"[内存优先级] 回读不一致 PID:%d 目标:%d 实际:%d（内核策略或系统断言影响）",
+              pid, pp.priority, actual);
     } else {
-        MCLog(@"[内核] ：系统接管并分配真实优先级为 %d", actual);
+        MCLog(@"[内存优先级] 写入并回读一致 PID:%d 目标:%d 实际:%d", pid, pp.priority, actual);
     }
 }
 
@@ -334,7 +335,12 @@ static void MCRunSweep(BOOL force) {
             MCLog(@"[进程] 目标: %@ 已启动 PID: %d", key, pid);
 
         if (!force && tracked.intValue == pid &&
-            [sApplied[key][@"cfg"] isEqual:[cfg dictionaryValue]]) continue;
+            [sApplied[key][@"cfg"] isEqual:[cfg dictionaryValue]]) {
+            /* Lifecycle events must repair priority changes even when PID/config are unchanged. */
+            int32_t actual = 0;
+            if (cfg.jetsamPriority <= 0 ||
+                (MCGetKernelPriority(pid, &actual) && actual == cfg.jetsamPriority)) continue;
+        }
 
         MCLog(@"[守护] 目标: %@ | PID: %d", key, pid);
         MCApplyOne(cfg, pid);

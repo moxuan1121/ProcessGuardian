@@ -15,6 +15,10 @@ jobs:
       PREFIX: /Applications/Xcode_15.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/
     steps:
       - uses: actions/checkout@v4
+      - name: Test Jetsam readback contract
+        run: |
+          clang -Wall -Wextra -Werror tests/kernel_priority.c -o "$RUNNER_TEMP/kernel-priority-test"
+          "$RUNNER_TEMP/kernel-priority-test"
       - name: Select Xcode 15.4
         run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
       - name: Install build tools
