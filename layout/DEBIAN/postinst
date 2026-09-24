@@ -4,10 +4,7 @@
 # 先杀掉，再按新 plist 重新加载，launchd 才会拉起新版本。
 killall -9 processguardiand 2>/dev/null
 
-if [ -f /var/jb/Library/LaunchDaemons/com.moxuan.processguardiand.plist ]; then
-    /var/jb/bin/launchctl unload /var/jb/Library/LaunchDaemons/com.moxuan.processguardiand.plist 2>/dev/null
-    /var/jb/bin/launchctl load /var/jb/Library/LaunchDaemons/com.moxuan.processguardiand.plist
-elif [ -f /Library/LaunchDaemons/com.moxuan.processguardiand.plist ]; then
+if [ -f /Library/LaunchDaemons/com.moxuan.processguardiand.plist ]; then
     launchctl unload /Library/LaunchDaemons/com.moxuan.processguardiand.plist 2>/dev/null
     launchctl load /Library/LaunchDaemons/com.moxuan.processguardiand.plist
 fi

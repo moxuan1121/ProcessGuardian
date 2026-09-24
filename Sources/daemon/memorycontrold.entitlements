@@ -18,10 +18,12 @@
 	<true/>
 	<key>com.apple.private.security.no-sandbox</key>
 	<true/>
+	<key>com.apple.private.security.storage.AppBundles</key>
+	<true/>
+	<key>com.apple.private.security.storage.AppDataContainers</key>
+	<true/>
 	<!--
 	  no-sandbox 让守护进程能读到任意进程的 .app/Info.plist（推断包名要用）。
-	  skip-library-validation 与 load-validation 无关，这里只是为了让 rootless
-	  下从 jbroot 加载 libroot.dylib 不被 library validation 拦掉。
 	-->
 	<key>com.apple.private.skip-library-validation</key>
 	<true/>

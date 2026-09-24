@@ -1,5 +1,4 @@
 #import "MCCommon.h"
-#import <dlfcn.h>
 #import <libproc.h>
 #import <libproc_internal.h>
 #import <sys/sysctl.h>
@@ -132,38 +131,7 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
 
 /* ---------------------------------------------------------------- 路径解析 */
 
-typedef const char *(*MCStringReturnFn)(void);
-
 @implementation MCCommon
-
-+ (NSString *)jbRoot {
-    static NSString *cached;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        /* rootless / palera1n 把整个越狱栈挪到 jbroot 之下，硬编码 /Library 会写错位置。
-           libroot 是各越狱工具共同导出的查询接口，优先用它。 */
-        void *h = dlopen("@rpath/libroot.dylib", RTLD_LAZY);
-        if (!h) h = dlopen("/usr/lib/libroot.dylib", RTLD_LAZY);
-        if (!h) h = dlopen("/var/jb/usr/lib/libroot.dylib", RTLD_LAZY);
-        if (h) {
-            MCStringReturnFn fn = (MCStringReturnFn)dlsym(h, "libroot_get_jbroot_prefix");
-            const char *p = fn ? fn() : NULL;
-            if (p && p[0]) {
-                cached = [NSString stringWithUTF8String:p];
-            } else {
-                MCStringReturnFn fn2 = (MCStringReturnFn)dlsym(h, "libroot_get_root_prefix");
-                const char *p2 = fn2 ? fn2() : NULL;
-                if (p2 && p2[0]) cached = [NSString stringWithUTF8String:p2];
-            }
-        }
-        if (!cached) {
-            if ([[NSFileManager defaultManager] fileExistsAtPath:@"/var/jb"]) cached = @"/var/jb";
-            else if ([[NSFileManager defaultManager] fileExistsAtPath:@"/var/LIY"]) cached = @"/var/LIY";
-            else cached = @"";
-        }
-    });
-    return cached;
-}
 
 + (NSString *)preferencesDirectory {
     return @"/var/mobile/Library/Preferences";
@@ -179,8 +147,7 @@ typedef const char *(*MCStringReturnFn)(void);
 }
 
 + (NSString *)logFilePath {
-    /* /var/mobile 在 rootless 下同样是共享目录，不在 jbroot 内，因此不加前缀。
-       放在这里而不是 /var/jb 下，偏好面板（mobile 身份）才读得到。 */
+    /* RootHide 中守护进程与设置面板共用此目录。 */
     NSString *dir = @"/var/mobile/Library/Logs";
     [[NSFileManager defaultManager] createDirectoryAtPath:dir
                               withIntermediateDirectories:YES

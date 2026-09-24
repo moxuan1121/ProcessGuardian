@@ -60,9 +60,7 @@ extern const double  MCDefaultLogSizeLimitMB;   /* 2 MB  */
 
 @interface MCCommon : NSObject
 
-/** 越狱根目录（/var/jb 等）。rootless 下前缀不同，需要 libroot 探测。 */
-+ (NSString *)jbRoot;
-/** 偏好 plist 全路径（rootless 下要拼进 /var/jb 前缀）。 */
+/** RootHide 共享偏好目录。 */
 + (NSString *)preferencesDirectory;
 + (NSString *)preferencesPlistPath;
 + (NSString *)statusPlistPath;

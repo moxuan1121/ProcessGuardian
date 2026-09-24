@@ -5,7 +5,6 @@
 
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
-#import <substrate.h>
 #import <UIKit/UIKit.h>
 
 #import "SALiteConfig.h"
@@ -24,6 +23,17 @@ static const NSTimeInterval SALiteBootstrapFallbackDelay = 6.0;  // 通知未到
 static IMP SALiteOriginalKillAppLayout = NULL;
 static IMP SALiteOriginalKillContainer = NULL;
 static IMP SALiteOriginalProcessDidLaunch = NULL;
+
+static void SALiteHook(Class cls, SEL selector, IMP replacement, IMP *original)
+{
+    if (!cls) return;
+    Method method = class_getInstanceMethod(cls, selector);
+    if (!method) return;
+    *original = method_getImplementation(method);
+    if (!class_addMethod(cls, selector, replacement, method_getTypeEncoding(method))) {
+        method_setImplementation(method, replacement);
+    }
+}
 
 // MARK: - 工具
 
@@ -124,16 +134,16 @@ static void SALiteBootstrapAfter(NSTimeInterval seconds)
     if (![[NSProcessInfo processInfo].processName isEqualToString:@"SpringBoard"]) return;
 
     Class switcher = objc_getClass("SBFluidSwitcherViewController");
-    MSHookMessageEx(switcher,
+    SALiteHook(switcher,
                     @selector(killAppLayoutOfContainer:withVelocity:forReason:),
                     (IMP)SALiteKillAppLayoutOfContainer,
                     &SALiteOriginalKillAppLayout);
-    MSHookMessageEx(switcher,
+    SALiteHook(switcher,
                     @selector(killContainer:forReason:),
                     (IMP)SALiteKillContainer,
                     &SALiteOriginalKillContainer);
 
-    MSHookMessageEx(objc_getClass("SBMainWorkspace"),
+    SALiteHook(objc_getClass("SBMainWorkspace"),
                     @selector(applicationProcessDidLaunch:),
                     (IMP)SALiteApplicationProcessDidLaunch,
                     &SALiteOriginalProcessDidLaunch);

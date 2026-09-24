@@ -1,6 +1,6 @@
-THEOS_PACKAGE_SCHEME ?= rootless
-ARCHS = arm64
-TARGET := iphone:clang:latest:15.0
+THEOS_PACKAGE_SCHEME = roothide
+ARCHS = arm64e
+TARGET := iphone:clang:16.5:15.0
 
 # 探针装进 SpringBoard；Theos 据此自动生成 dylib 的 Filter plist。
 INSTALL_TARGET_PROCESSES = SpringBoard
@@ -13,12 +13,12 @@ TWEAK_NAME = ProcessGuardian ProcessGuardianStay
 ProcessGuardian_FILES = Sources/Tweak.x Sources/MCCPUGuard.m Sources/MCCommon.m
 ProcessGuardian_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/Sources/libproc
 ProcessGuardian_FRAMEWORKS = Foundation UIKit
-ProcessGuardian_INSTALL_PATH = /Library/MobileSubstrate/DynamicLibraries
+ProcessGuardian_INSTALL_PATH = /usr/lib/TweakInject
 
 ProcessGuardianStay_FILES = Sources/stay/Tweak.x Sources/stay/SALiteConfig.m Sources/stay/SALiteStayAliveManager.m
 ProcessGuardianStay_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
 ProcessGuardianStay_FRAMEWORKS = UIKit Foundation SystemConfiguration
-ProcessGuardianStay_LIBRARIES = substrate
+ProcessGuardianStay_INSTALL_PATH = /usr/lib/TweakInject
 
 # ====================================================== 2. root 守护进程（全部特权工作）
 TOOL_NAME = processguardiand
@@ -61,11 +61,8 @@ after-install::
 
 include $(THEOS)/makefiles/package.mk
 
-# LaunchDaemon 的 Program / plist 路径要跟随越狱前缀：rootless 是 /var/jb，rootful 为空。
-# 写死任何一边都会让另一种越狱起不来，所以留到打包时再展开。
 before-package::
 	@mkdir -p $(THEOS_STAGING_DIR)/Library/LaunchDaemons
-	@sed 's|@PREFIX@|$(THEOS_PACKAGE_INSTALL_PREFIX)|g' \
-		packaging/com.replay.memorycontrold.plist.in \
-		> $(THEOS_STAGING_DIR)/Library/LaunchDaemons/com.moxuan.processguardiand.plist
+	@cp packaging/com.moxuan.processguardiand.plist \
+		$(THEOS_STAGING_DIR)/Library/LaunchDaemons/com.moxuan.processguardiand.plist
 	@chmod 755 $(THEOS_STAGING_DIR)/DEBIAN/postinst $(THEOS_STAGING_DIR)/DEBIAN/prerm 2>/dev/null || true

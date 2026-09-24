@@ -6,19 +6,22 @@ on:
     branches: [main]
 
 jobs:
-  rootless:
+  roothide:
     runs-on: macos-14
     env:
       THEOS: ${{ github.workspace }}/theos
-      THEOS_PACKAGE_SCHEME: rootless
+      THEOS_PACKAGE_SCHEME: roothide
       FINALPACKAGE: 1
+      PREFIX: /Applications/Xcode_15.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/
     steps:
       - uses: actions/checkout@v4
+      - name: Select Xcode 15.4
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
       - name: Install build tools
         run: brew install make dpkg ldid
       - name: Install Theos and iOS SDK
         run: |
-          git clone --depth 1 --recursive https://github.com/theos/theos.git "$THEOS"
+          git clone --depth 1 --recursive https://github.com/roothide/theos.git "$THEOS"
           git clone --depth 1 --filter=blob:none --sparse https://github.com/theos/sdks.git /tmp/processguardian-sdks
           git -C /tmp/processguardian-sdks sparse-checkout set iPhoneOS16.5.sdk
           mkdir -p "$THEOS/sdks"
@@ -26,12 +29,14 @@ jobs:
       - name: Build deb
         run: |
           export PATH="/opt/homebrew/opt/make/libexec/gnubin:$THEOS/bin:$PATH"
-          make package THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1
+          SYSROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
+          make package THEOS_PACKAGE_SCHEME=roothide FINALPACKAGE=1 TARGET=iphone:clang:17.5:15.0 SYSROOT="$SYSROOT"
       - name: Verify deb contents
         run: |
           deb="$(find packages -maxdepth 1 -name 'com.moxuan.processguardian_*.deb' -print -quit)"
           test -n "$deb" && test -s "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = com.moxuan.processguardian
+          test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
           contents="$(dpkg-deb -c "$deb")"
           printf '%s\n' "$contents"
           for file in ProcessGuardian.dylib ProcessGuardianStay.dylib processguardiand ProcessGuardianPrefs.bundle; do
@@ -39,8 +44,14 @@ jobs:
           done
           grep -q 'ProcessGuardianPrefs.bundle/Info.plist' <<<"$contents"
           grep -q 'Library/LaunchDaemons/com.moxuan.processguardiand.plist' <<<"$contents"
+          grep -q 'usr/lib/TweakInject/ProcessGuardian.dylib' <<<"$contents"
+          grep -q 'usr/lib/TweakInject/ProcessGuardian.plist' <<<"$contents"
+          grep -q 'usr/lib/TweakInject/ProcessGuardianStay.dylib' <<<"$contents"
+          grep -q 'usr/lib/TweakInject/ProcessGuardianStay.plist' <<<"$contents"
+          ! grep -q 'Library/MobileSubstrate/' <<<"$contents"
+          ! grep -q 'var/jb/' <<<"$contents"
       - uses: actions/upload-artifact@v4
         with:
-          name: processguardian-rootless
+          name: processguardian-roothide
           path: packages/*.deb
           if-no-files-found: error

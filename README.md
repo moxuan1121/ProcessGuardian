@@ -13,7 +13,7 @@ iOS 15–17.3 越狱插件：一个设置入口管理应用或进程的 nice 优
 
 ## 构建
 
-需要 Theos 与 iOS SDK。`make package THEOS_PACKAGE_SCHEME=rootless` 输出 `packages/*.deb`。GitHub Actions 中的 `Package` 工作流可手动运行，成功后在该次运行的 Artifacts 下载 deb。
+需要 RootHide Theos 与 iOS SDK。`make package THEOS_PACKAGE_SCHEME=roothide` 输出 `iphoneos-arm64e` 的 `packages/*.deb`。GitHub Actions 中的 `Package` 工作流可手动运行，成功后在该次运行的 Artifacts 下载 deb。仅支持 RootHide 隐根环境。
 
 本工程尚需真机验证 SpringBoard 私有 API 和不同越狱环境下的行为。首次测试请选非系统应用，先测试单项设置。
 

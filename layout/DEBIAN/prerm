@@ -1,11 +1,7 @@
 #!/bin/sh
 
 # KeepAlive 为真，先 unload 再 kill，否则删完进程还会被 launchd 复活。
-if [ -f /var/jb/Library/LaunchDaemons/com.moxuan.processguardiand.plist ]; then
-    /var/jb/bin/launchctl unload /var/jb/Library/LaunchDaemons/com.moxuan.processguardiand.plist 2>/dev/null
-else
-    launchctl unload /Library/LaunchDaemons/com.moxuan.processguardiand.plist 2>/dev/null
-fi
+launchctl unload /Library/LaunchDaemons/com.moxuan.processguardiand.plist 2>/dev/null
 
 killall -9 processguardiand 2>/dev/null
 
