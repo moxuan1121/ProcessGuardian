@@ -37,6 +37,8 @@ jobs:
           for file in ProcessGuardian.dylib ProcessGuardianStay.dylib processguardiand ProcessGuardianPrefs.bundle; do
             grep -q "$file" <<<"$contents"
           done
+          grep -q 'ProcessGuardianPrefs.bundle/Info.plist' <<<"$contents"
+          grep -q 'Library/LaunchDaemons/com.moxuan.processguardiand.plist' <<<"$contents"
       - uses: actions/upload-artifact@v4
         with:
           name: processguardian-rootless

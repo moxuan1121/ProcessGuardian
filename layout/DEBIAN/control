@@ -2,7 +2,7 @@ Package: com.moxuan.processguardian
 Name: ProcessGuardian
 Version: 0.1.0
 Architecture: iphoneos-arm64
-Description: iOS 15-17 进程优先级、内存与前台 CPU 限额及后台重新拉起
+Description: iOS process priority, memory and foreground CPU limits with background relaunch
 Maintainer: moxuan1121
 Author: moxuan1121
 Section: Tweaks
