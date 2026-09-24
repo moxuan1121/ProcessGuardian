@@ -49,7 +49,7 @@ jobs:
           grep -q 'Library/LaunchDaemons/com.moxuan.processguardiand.plist' <<<"$contents"
           mkdir -p "$RUNNER_TEMP/processguardian-deb"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/processguardian-deb"
-          ldid -e "$RUNNER_TEMP/processguardian-deb/usr/bin/processguardiand" | python3 -c 'import plistlib, sys; assert plistlib.load(sys.stdin.buffer).get("com.apple.private.memorystatus") is True'
+          ldid -e "$RUNNER_TEMP/processguardian-deb/usr/bin/processguardiand" | python3 -c 'import plistlib, sys; assert plistlib.loads(sys.stdin.buffer.read()).get("com.apple.private.memorystatus") is True'
           grep -q 'usr/lib/TweakInject/ProcessGuardian.dylib' <<<"$contents"
           grep -q 'usr/lib/TweakInject/ProcessGuardian.plist' <<<"$contents"
           grep -q 'usr/lib/TweakInject/ProcessGuardianStay.dylib' <<<"$contents"
