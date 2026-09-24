@@ -227,8 +227,7 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
     self.processSearch.searchBar.placeholder = @"搜索进程或备注";
     self.navigationItem.searchController = self.processSearch;
     self.navigationItem.hidesSearchBarWhenScrolling = YES;
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
-        initWithBarButtonSystemItem:UIBarButtonSystemItemAdd target:self action:@selector(addNewProcess)];
+    self.navigationItem.rightBarButtonItem = nil;
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -336,7 +335,10 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)path {
     PSSpecifier *item = [self specifierAtIndex:[self indexForIndexPath:path]];
-    return [item propertyForKey:@"processIdentifier"] ? 78.0 : 44.0;
+    return [item propertyForKey:@"processIdentifier"]
+        ? [UIFont preferredFontForTextStyle:UIFontTextStyleTitle3].lineHeight
+            + 2 * [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline].lineHeight + 24.0
+        : 44.0;
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {

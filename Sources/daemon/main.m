@@ -77,6 +77,7 @@ static void MCLog(NSString *format, ...) {
  * 存 cfg 是因为「恢复默认」必须知道当初动过哪些开关，否则无从撤销。
  */
 static NSMutableDictionary<NSString *, NSDictionary *> *sApplied;
+static BOOL MCReadKernelPriority(pid_t pid, int32_t *priority);
 
 static void MCForgetKey(NSString *key) {
     [sApplied removeObjectForKey:key];
@@ -89,11 +90,22 @@ static void MCRememberKey(NSString *key, pid_t pid, MCProcessConfig *cfg) {
 }
 
 static void MCPublishStatus(BOOL enabled) {
+    NSMutableDictionary *processes = [NSMutableDictionary dictionary];
+    for (NSString *key in sApplied) {
+        NSMutableDictionary *entry = [sApplied[key] mutableCopy];
+        pid_t pid = [entry[@"pid"] intValue];
+        int32_t priority = 0;
+        if (pid > 0 && MCReadKernelPriority(pid, &priority)) entry[@"ActualJetsam"] = @(priority);
+        errno = 0;
+        int nice = pid > 0 ? getpriority(PRIO_PROCESS, pid) : 0;
+        if (pid > 0 && errno == 0) entry[@"ActualNice"] = @(nice);
+        processes[key] = entry;
+    }
     [MCCommon writeStatus:@{
         @"Enabled":     @(enabled),
         @"PID":         @((int)getpid()),
         @"LastUpdate":  [MCCommon timestampString],
-        @"Processes":   [sApplied copy],
+        @"Processes":   processes,
     }];
 }
 

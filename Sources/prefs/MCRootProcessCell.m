@@ -7,7 +7,10 @@
     self = [super initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:identifier specifier:specifier];
     if (self) {
         self.detailTextLabel.numberOfLines = 2;
-        self.detailTextLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
+        self.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleTitle3];
+        self.textLabel.adjustsFontForContentSizeCategory = YES;
+        self.detailTextLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
+        self.detailTextLabel.adjustsFontForContentSizeCategory = YES;
         self.detailTextLabel.textColor = [UIColor secondaryLabelColor];
     }
     return self;

@@ -202,7 +202,7 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
         footer:@"重启 SpringBoard 后按顺序恢复已守护的应用" key:@"RelaunchAfterRespring"]];
 
     self.sections = @[ identity, limits, switches ];
-    self.sectionTitles = [@[ @"目标说明", @"内存限制", @"强锁选项" ] mutableCopy];
+    self.sectionTitles = [@[ @"目标说明", @"内存限制", @"后台守护" ] mutableCopy];
 }
 
 - (void)setupTable {

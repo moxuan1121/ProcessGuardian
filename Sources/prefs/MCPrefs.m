@@ -147,6 +147,17 @@ NSArray<NSString *> *MCPriorityNames(void) {
         errno = 0;
         int nice = getpriority(PRIO_PROCESS, pid);
         if (errno == 0) actualNice = [@(nice) stringValue];
+        if ([actualPriority isEqualToString:@"?"] || [actualNice isEqualToString:@"?"]) {
+            id processes = [MCPrefs readStatus][@"Processes"];
+            id status = [processes isKindOfClass:[NSDictionary class]] ? processes[key] : nil;
+            if (![status isKindOfClass:[NSDictionary class]]) status = nil;
+            if ([status[@"pid"] intValue] == pid) {
+                if ([actualPriority isEqualToString:@"?"] && [status[@"ActualJetsam"] isKindOfClass:[NSNumber class]])
+                    actualPriority = [status[@"ActualJetsam"] stringValue];
+                if ([actualNice isEqualToString:@"?"] && [status[@"ActualNice"] isKindOfClass:[NSNumber class]])
+                    actualNice = [status[@"ActualNice"] stringValue];
+            }
+        }
     }
     NSInteger configuredPriority = cfg[@"JetsamPriority"] ? [cfg[@"JetsamPriority"] integerValue] : -1;
     return [NSString stringWithFormat:@"p=%@、n=%@、pid=%@\np=%ld、a=%ld、i=%ld、n=%ld、s=%d",
