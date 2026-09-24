@@ -57,8 +57,7 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
             NSMutableDictionary *p = [MCPrefs readPrefs];
             p[kSortKey] = @(i);
             [MCPrefs writePrefs:p wakeDaemon:NO];
-            ws->_specifiers = nil;
-            [ws reloadSpecifiers];
+            [ws refreshProcessList];
         }]];
     }
     [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
@@ -203,6 +202,11 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
 }
 
 /* ---------------------------------------------------------------- 菜单 */
+
+- (void)refreshProcessList {
+    _specifiers = nil;
+    [self reloadSpecifiers];
+}
 
 - (void)viewDidLoad {
     [super viewDidLoad];
