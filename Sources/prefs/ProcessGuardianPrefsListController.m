@@ -71,6 +71,17 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
 }
 
 - (void)presentProcessSheet:(UIViewController *)controller {
+    if ([controller isKindOfClass:[MCProcessEditViewController class]]) {
+        __weak typeof(self) ws = self;
+        BOOL creating = ((MCProcessEditViewController *)controller).creating;
+        ((MCProcessEditViewController *)controller).onSaved = ^{
+            if (creating) {
+                ws.processSearch.searchBar.text = @"";
+                ws.processSearch.active = NO;
+            }
+            [ws refreshProcessList];
+        };
+    }
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:controller];
     nav.modalPresentationStyle = UIModalPresentationPageSheet;
     nav.sheetPresentationController.detents = @[UISheetPresentationControllerDetent.largeDetent];

@@ -49,6 +49,7 @@ typedef NS_ENUM(NSInteger, MCListSortMode) {
 /** AppConfigs 里的键（包名或进程名）。 */
 @property (nonatomic, copy) NSString *targetIdentifier;
 @property (nonatomic, assign) BOOL creating;
+@property (nonatomic, copy) void (^onSaved)(void);
 @end
 
 /** 运行日志查看器。 */

@@ -124,6 +124,8 @@
 - (void)pick:(NSString *)identifier {
     if (identifier.length == 0) return;
     void (^block)(NSString *) = self.onPick;
+    [self.view endEditing:YES];
+    self.search.active = NO;
     /* 先出栈再回调：回调里会 push 编辑器，两边同时操作导航栈会被 UIKit 丢掉一次。 */
     if (self.navigationController.viewControllers.count > 1)
         [self.navigationController popViewControllerAnimated:NO];

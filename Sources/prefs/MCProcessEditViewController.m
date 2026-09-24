@@ -123,7 +123,12 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     MCAppListViewController *picker = [MCAppListViewController new];
     __weak typeof(self) ws = self;
     picker.onPick = ^(NSString *identifier) {
+        NSString *oldIdentifier = ws.targetIdentifier;
+        NSString *remark = ws.config[@"Remark"];
         ws.targetIdentifier = identifier;
+        NSString *appName = [MCPrefs installedApps][identifier];
+        if (appName.length && (!remark.length || [remark isEqualToString:oldIdentifier]))
+            ws.config[@"Remark"] = appName;
         [ws.table reloadData];
     };
     [self.navigationController pushViewController:picker animated:YES];
@@ -153,11 +158,15 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
         [self presentViewController:alert animated:YES completion:nil];
         return;
     }
+    if (self.creating && ![self.config[@"Remark"] length]) {
+        NSString *appName = [MCPrefs installedApps][identifier];
+        if (appName.length) self.config[@"Remark"] = appName;
+    }
     if (self.originalIdentifier.length) [apps removeObjectForKey:self.originalIdentifier];
     apps[identifier] = [self.config copy];
     prefs[@"AppConfigs"] = apps;
     [MCPrefs writePrefs:prefs wakeDaemon:YES];
-    [self dismissViewControllerAnimated:YES completion:nil];
+    [self dismissViewControllerAnimated:YES completion:self.onSaved];
 }
 
 - (void)buildRows {
@@ -176,8 +185,8 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
                      footer:@"同上，作用于进程处于后台时" key:@"MemLimitInactive"]];
     [limits addObject:[MCEditRow rowWithKind:MCEditRowOption title:@"进程优先级 (Nice)"
                      footer:@"-20 最高优先 到 19 最低优先，默认 0" key:@"NiceValue"]];
-    [limits addObject:[MCEditRow rowWithKind:MCEditRowOption title:@"内存优先级 (Jetsam)"
-                     footer:@"-1 让插件不要设置；0 重新让系统接管；其余为内核 jetsam band"
+    [limits addObject:[MCEditRow rowWithKind:MCEditRowOption title:@"内存优先级"
+                     footer:@"-1 让插件不要设置；0 重新让系统接管；其余为系统内存优先级"
                      key:@"JetsamPriority"]];
     [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"前台 CPU 上限 (%)"
                      footer:@"0 关闭；2～1000 为 CPU 百分比阈值。100% 约为单个核心满载"
