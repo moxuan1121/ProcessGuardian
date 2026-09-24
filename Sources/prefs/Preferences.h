@@ -21,7 +21,7 @@
 @property (nonatomic, strong) UITableView *tableview;
 @property (nonatomic, strong) NSArray<PSSpecifier *> *specifiers;
 /** 读取 PreferenceBundle 内同名 plist 并解析成 specifier 数组。 */
-- (void)loadSpecifiersFromPlistName:(NSString *)name target:(id)target;
+- (NSArray<PSSpecifier *> *)loadSpecifiersFromPlistName:(NSString *)name target:(id)target;
 - (id)preferenceValueForSpecifier:(PSSpecifier *)specifier;
 - (void)setPreferenceValue:(id)value specifier:(PSSpecifier *)specifier;
 @end

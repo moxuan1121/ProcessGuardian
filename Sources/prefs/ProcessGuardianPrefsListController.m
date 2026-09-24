@@ -239,7 +239,7 @@ static NSString *const kTGChatURL   = @"https://t.me/iosdumpzzz";
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"ProcessGuardian";
-    [self loadSpecifiersFromPlistName:@"Root" target:self];
+    self.specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
 }
 
 @end
