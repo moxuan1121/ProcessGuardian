@@ -43,7 +43,7 @@ ProcessGuardianPrefs_FILES = \
 	Sources/MCCommon.m
 
 ProcessGuardianPrefs_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/Sources/libproc -Wno-deprecated-declarations
-ProcessGuardianPrefs_FRAMEWORKS = UIKit Foundation UniformTypeIdentifiers
+ProcessGuardianPrefs_FRAMEWORKS = UIKit Foundation
 ProcessGuardianPrefs_INFO_PLIST = packaging/PrefsInfo.plist
 ProcessGuardianPrefs_RESOURCE_FILES = Sources/prefs/Root.plist Sources/prefs/icon.png
 ProcessGuardianPrefs_INSTALL_PATH = /Library/PreferenceBundles

@@ -10,7 +10,6 @@
  * 会长期不一致，索性只留一条路。
  */
 #import "MCPrefsClasses.h"
-#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>   // iOS 14+ 的 UTType.propertyList
 
 static NSString *const kSortKey     = @"SortMode";
 static NSString *const kLogLimitKey = @"LogSizeLimit";
@@ -155,13 +154,8 @@ static NSString *const kTGChatURL   = @"https://t.me/iosdumpzzz";
 
 - (void)importConfig {
     UIDocumentPickerViewController *picker;
-    if (@available(iOS 14.0, *)) {
-        picker = [[UIDocumentPickerViewController alloc]
-                    initForOpeningContentTypes:@[ UTType.propertyList ] asCopy:YES];
-    } else {
-        picker = [[UIDocumentPickerViewController alloc]
-                    initWithDocumentTypes:@[ @"public.property-list" ] inMode:UIDocumentPickerModeImport];
-    }
+    picker = [[UIDocumentPickerViewController alloc]
+                  initWithDocumentTypes:@[ @"public.property-list" ] inMode:UIDocumentPickerModeImport];
     picker.delegate = self;
     picker.allowsMultipleSelection = NO;
     [self presentViewController:picker animated:YES completion:nil];

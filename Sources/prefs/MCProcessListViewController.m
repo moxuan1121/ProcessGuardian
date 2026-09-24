@@ -78,7 +78,6 @@
     self.search = [[UISearchController alloc] initWithSearchResultsController:nil];
     self.search.searchResultsUpdater = self;
     self.search.delegate = self;
-    self.search.hidesSearchBarWhenScrolling = NO;
     self.search.searchBar.placeholder = @"搜索进程或备注";
     self.tableView.tableHeaderView = self.search.searchBar;
 
