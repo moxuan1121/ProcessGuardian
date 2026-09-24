@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  这三项决定了本包能做到哪一步。只有 task_for_pid 是「Mach 调度前台锁定 /
+	  吞吐量提权 / 禁用 App Nap / QoS 提权」这四项的前提；缺了它守护进程会打印
+	  「获取 task_port 失败 (请检查 daemon.entitlements)」并跳过，其余 jetsam 类
+	  功能不受影响。
+	-->
+	<key>com.apple.system-task-ports</key>
+	<true/>
+	<key>task_for_pid-allow</key>
+	<true/>
+	<key>get-task-allow</key>
+	<false/>
+	<key>platform-application</key>
+	<true/>
+	<key>com.apple.private.security.no-sandbox</key>
+	<true/>
+	<!--
+	  no-sandbox 让守护进程能读到任意进程的 .app/Info.plist（推断包名要用）。
+	  skip-library-validation 与 load-validation 无关，这里只是为了让 rootless
+	  下从 jbroot 加载 libroot.dylib 不被 library validation 拦掉。
+	-->
+	<key>com.apple.private.skip-library-validation</key>
+	<true/>
+</dict>
+</plist>

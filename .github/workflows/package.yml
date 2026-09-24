@@ -1,0 +1,44 @@
+name: Package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  rootless:
+    runs-on: macos-14
+    env:
+      THEOS: ${{ github.workspace }}/theos
+      THEOS_PACKAGE_SCHEME: rootless
+      FINALPACKAGE: 1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: brew install make dpkg ldid
+      - name: Install Theos and iOS SDK
+        run: |
+          git clone --depth 1 --recursive https://github.com/theos/theos.git "$THEOS"
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/theos/sdks.git /tmp/processguardian-sdks
+          git -C /tmp/processguardian-sdks sparse-checkout set iPhoneOS16.5.sdk
+          mkdir -p "$THEOS/sdks"
+          cp -R /tmp/processguardian-sdks/iPhoneOS16.5.sdk "$THEOS/sdks/"
+      - name: Build deb
+        run: |
+          export PATH="/opt/homebrew/opt/make/libexec/gnubin:$THEOS/bin:$PATH"
+          make package THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1
+      - name: Verify deb contents
+        run: |
+          deb="$(find packages -maxdepth 1 -name 'com.moxuan.processguardian_*.deb' -print -quit)"
+          test -n "$deb" && test -s "$deb"
+          test "$(dpkg-deb -f "$deb" Package)" = com.moxuan.processguardian
+          contents="$(dpkg-deb -c "$deb")"
+          printf '%s\n' "$contents"
+          for file in ProcessGuardian.dylib ProcessGuardianStay.dylib processguardiand ProcessGuardianPrefs.bundle; do
+            grep -q "$file" <<<"$contents"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: processguardian-rootless
+          path: packages/*.deb
+          if-no-files-found: error

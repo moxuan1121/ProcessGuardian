@@ -1,0 +1,4 @@
+*.sh text eol=lf
+layout/DEBIAN/* text eol=lf
+Makefile text eol=lf
+*.plist text eol=lf

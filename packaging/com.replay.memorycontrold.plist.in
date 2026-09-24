@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  @PREFIX@ 由 Makefile 的 before-package 替换：rootless（/var/jb）下越狱栈整体在
+  jbroot 里，rootful 下前缀为空。写死任一个都会让另一种越狱方式起不来。
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.moxuan.processguardiand</string>
+	<key>Program</key>
+	<string>@PREFIX@/usr/bin/processguardiand</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>UserName</key>
+	<string>root</string>
+	<key>StandardErrorPath</key>
+	<string>/dev/null</string>
+	<key>SoftResourceLimits</key>
+	<dict>
+		<key>NumberOfFiles</key>
+		<integer>256</integer>
+	</dict>
+</dict>
+</plist>
