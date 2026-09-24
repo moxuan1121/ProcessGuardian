@@ -1,9 +1,7 @@
 /**
  * ProcessGuardianPrefsListController.m —— 偏好面板根页。
  *
- * Root.plist 里每个可写项都带 Get/Set 两个键，指向本类的
- * preferenceValueForSpecifier: / setPreferenceValue:specifier:，于是不管开关还是
- * 输入框，读写都走同一个文件。
+ * 使用 PSListController 的 specifiers 入口创建菜单，避免页面重进时读取到空菜单。
  *
  * 之所以绕开 CFPreferences：守护进程以 root 身份直接读那个 plist，而偏好域的缓存归
  * mobile 用户的 cfprefsd 所有。两套写入路径并存时，面板显示的值和守护进程读到的值
@@ -21,15 +19,14 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
 
 /* ---------------------------------------------------- 读写（单一走文件） */
 
-- (id)preferenceValueForSpecifier:(PSSpecifier *)specifier {
-    NSString *key = specifier.key;
-    if (!key.length) return [super preferenceValueForSpecifier:specifier];
+- (id)readPreferenceValue:(PSSpecifier *)specifier {
+    NSString *key = [specifier propertyForKey:@"key"];
     return @([[MCPrefs readPrefs][key] boolValue]);
 }
 
 - (void)setPreferenceValue:(id)value specifier:(PSSpecifier *)specifier {
-    NSString *key = specifier.key;
-    if (!key.length) { [super setPreferenceValue:value specifier:specifier]; return; }
+    NSString *key = [specifier propertyForKey:@"key"];
+    if (!key.length) return;
 
     NSMutableDictionary *prefs = [MCPrefs readPrefs];
     if (value == nil || [value isEqual:@""]) [prefs removeObjectForKey:key];
@@ -105,7 +102,7 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
     [self alertWithMessage:@"日志已清空！"];
 }
 
-/** 用按钮 + 动作面板而不是 plist 里的选项 cell：原版 Root.plist 只用到 PSGroup/PSSwitch/PSButton 三种 cell。 */
+/** 用按钮 + 动作面板选择日志限额。 */
 - (void)chooseLogLimit {
     NSArray *values  = @[@1, @2, @5, @10];
     NSArray *titles  = @[@"1 MB", @"2 MB(默认)", @"5 MB", @"10 MB"];
@@ -213,17 +210,56 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
     [self presentViewController:a animated:YES completion:nil];
 }
 
-/* ---------------------------------------------------------------- 生命周期 */
+/* ---------------------------------------------------------------- 菜单 */
 
-- (void)viewDidLoad {
-    [super viewDidLoad];
-    self.title = @"ProcessGuardian";
-    self.specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
-}
+- (NSArray *)specifiers {
+    if (_specifiers) return _specifiers;
+    NSMutableArray *items = [NSMutableArray array];
 
-- (void)viewWillAppear:(BOOL)animated {
-    [super viewWillAppear:animated];
-    [self reloadSpecifiers];
+    PSSpecifier *group = [PSSpecifier groupSpecifierWithName:@"生效设置"];
+    [group setProperty:@"关闭后停止应用配置，并恢复已接管进程的优先级和内存限制。" forKey:@"footerText"];
+    [items addObject:group];
+    for (NSArray *entry in @[ @[@"生效开关", @"Enabled"], @[@"后台刷新", @"BackgroundRefresh"] ]) {
+        PSSpecifier *item = [PSSpecifier preferenceSpecifierNamed:entry[0] target:self
+            set:@selector(setPreferenceValue:specifier:) get:@selector(readPreferenceValue:)
+            detail:nil cell:PSSwitchCell edit:nil];
+        [item setProperty:entry[1] forKey:@"key"];
+        [item setProperty:@NO forKey:@"default"];
+        [items addObject:item];
+    }
+
+    [items addObject:[PSSpecifier groupSpecifierWithName:@"日志配置"]];
+    NSArray *buttons = @[
+        @[@"查看日志", NSStringFromSelector(@selector(showLog))],
+        @[@"清空日志", NSStringFromSelector(@selector(clearLog))],
+        @[@"自动清理日志", NSStringFromSelector(@selector(chooseLogLimit))],
+        @[@"进程排序", NSStringFromSelector(@selector(sortProcessList))],
+        @[@"添加进程", NSStringFromSelector(@selector(addNewProcess))],
+        @[@"进程列表", NSStringFromSelector(@selector(showProcessList))],
+    ];
+    for (NSArray *entry in buttons) {
+        PSSpecifier *item = [PSSpecifier preferenceSpecifierNamed:entry[0] target:self
+            set:nil get:nil detail:nil cell:PSButtonCell edit:nil];
+        [item setButtonAction:NSSelectorFromString(entry[1])];
+        [items addObject:item];
+    }
+
+    group = [PSSpecifier groupSpecifierWithName:@"配置维护"];
+    [group setProperty:@"导入/导出的是 AppConfigs 整段，可跨设备迁移；「跳转配置」用 Filza 打开原始 plist。" forKey:@"footerText"];
+    [items addObject:group];
+    for (NSArray *entry in @[
+        @[@"跳转配置", NSStringFromSelector(@selector(jumpToConfig))],
+        @[@"导入配置", NSStringFromSelector(@selector(importConfig))],
+        @[@"导出配置", NSStringFromSelector(@selector(exportConfig))],
+        @[@"恢复配置", NSStringFromSelector(@selector(restoreConfig))],
+    ]) {
+        PSSpecifier *item = [PSSpecifier preferenceSpecifierNamed:entry[0] target:self
+            set:nil get:nil detail:nil cell:PSButtonCell edit:nil];
+        [item setButtonAction:NSSelectorFromString(entry[1])];
+        [items addObject:item];
+    }
+    _specifiers = items;
+    return _specifiers;
 }
 
 @end

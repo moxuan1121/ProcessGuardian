@@ -8,7 +8,8 @@
 #define MC_PREFS_CLASSES_H
 
 #import <UIKit/UIKit.h>
-#import "Preferences.h"
+#import <Preferences/PSListController.h>
+#import <Preferences/PSSpecifier.h>
 #import "MCPrefs.h"
 
 /** 列表排序方式，值存在偏好域的 SortMode 键里，由列表页读取后应用。 */
