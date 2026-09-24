@@ -1,5 +1,5 @@
 THEOS_PACKAGE_SCHEME ?= rootless
-ARCHS = arm64 arm64e
+ARCHS = arm64
 TARGET := iphone:clang:latest:15.0
 
 # 探针装进 SpringBoard；Theos 据此自动生成 dylib 的 Filter plist。
