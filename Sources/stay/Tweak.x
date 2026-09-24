@@ -12,10 +12,6 @@
 #import "SALiteStayAliveManager.h"
 #import "SALitePrivateAPI.h"
 
-static NSString *const SALiteShortcutType  = @"com.crctdd.stayalivelite.toggle-background";
-static NSString *const SALiteUserInfoKey   = @"bundleID";
-static NSString *const SALiteSettingsAppID = @"com.apple.Preferences";
-static NSString *const SALiteShortcutIcon  = @"arrow.clockwise.circle";
 
 /// 0.1.7：守护核心真正 start 之后才让各个 hook 生效
 static BOOL SALiteRuntimeActive = NO;
@@ -28,8 +24,6 @@ static const NSTimeInterval SALiteBootstrapFallbackDelay = 6.0;  // 通知未到
 static IMP SALiteOriginalKillAppLayout = NULL;
 static IMP SALiteOriginalKillContainer = NULL;
 static IMP SALiteOriginalProcessDidLaunch = NULL;
-static IMP SALiteOriginalShortcutItems = NULL;
-static IMP SALiteOriginalActivateShortcut = NULL;
 
 // MARK: - 工具
 
@@ -72,19 +66,6 @@ static NSArray<NSString *> *SALiteBundleIDsFromContainer(id container)
     return [bundleIDs array];
 }
 
-/// 长按图标的宿主图标可能提供两种取值方式
-static NSString *SALiteIconBundleIdentifier(id iconView)
-{
-    for (NSString *name in @[ @"applicationBundleIdentifier", @"applicationBundleIdentifierForShortcuts" ]) {
-        SEL selector = NSSelectorFromString(name);
-        if (![iconView respondsToSelector:selector]) continue;
-
-        id value = ((id (*)(id, SEL))objc_msgSend)(iconView, selector);
-        if ([value isKindOfClass:[NSString class]] && [value length]) return value;
-    }
-    return nil;
-}
-
 // MARK: - 上滑杀进程
 
 static void SALiteKillAppLayoutOfContainer(id self, SEL _cmd, id container, id velocity, NSInteger reason)
@@ -121,64 +102,6 @@ static void SALiteApplicationProcessDidLaunch(id self, SEL _cmd, id process)
     if (SALiteRuntimeActive) {
         [[SALiteStayAliveManager sharedManager] applicationProcessDidLaunch:process];
     }
-}
-
-// MARK: - 长按菜单 Quick Action
-
-static NSArray *SALiteApplicationShortcutItems(id self, SEL _cmd)
-{
-    NSArray *original = SALiteOriginalShortcutItems
-                        ? ((NSArray *(*)(id, SEL))SALiteOriginalShortcutItems)(self, _cmd)
-                        : nil;
-
-    if (![SALiteConfig isGlobalEnabled] || ![SALiteConfig globalBoolForKey:@"longPressEnabled"]) {
-        return original;
-    }
-
-    NSString *bundleIdentifier = SALiteIconBundleIdentifier(self);
-    if (bundleIdentifier.length == 0 || [bundleIdentifier isEqualToString:SALiteSettingsAppID]) {
-        return original;
-    }
-
-    BOOL on = [[[SALiteConfig policyForBundleIdentifier:bundleIdentifier] objectForKey:@"enabled"] boolValue];
-
-    NSMutableArray *items = original ? [original mutableCopy] : [NSMutableArray array];
-
-    SALiteLoadLaunchFrameworks();
-    Class itemClass = NSClassFromString(@"SBSApplicationShortcutItem");
-    SBSApplicationShortcutItem *item = [[(id)itemClass alloc] init];
-    if (item) {
-        item.type = SALiteShortcutType;
-        item.localizedTitle = on ? @"关闭守护后台" : @"开启守护后台";
-        item.userInfo = @{ SALiteUserInfoKey: bundleIdentifier };
-
-        Class iconClass = NSClassFromString(@"SBSApplicationShortcutSystemIcon");
-        if ([iconClass instancesRespondToSelector:@selector(initWithSystemImageName:)]) {
-            item.icon = [[(id)iconClass alloc] initWithSystemImageName:SALiteShortcutIcon];
-        }
-        [items insertObject:item atIndex:0];
-    }
-
-    return items;
-}
-
-static void SALiteActivateShortcut(id self, SEL _cmd, id shortcut, NSString *bundleIdentifier, id iconView)
-{
-    if (![[((SBSApplicationShortcutItem *)shortcut) type] isEqualToString:SALiteShortcutType]) {
-        if (SALiteOriginalActivateShortcut) {
-            ((void (*)(id, SEL, id, NSString *, id))SALiteOriginalActivateShortcut)(self, _cmd,
-                                                                                   shortcut, bundleIdentifier, iconView);
-        }
-        return;
-    }
-
-    // 自己的快捷方式：直接翻转策略，不再走系统实现
-    id value = [shortcut userInfo][SALiteUserInfoKey];
-    NSString *target = [value isKindOfClass:[NSString class]] ? value : bundleIdentifier;
-    if (target.length == 0) return;
-
-    BOOL on = [[[SALiteConfig policyForBundleIdentifier:target] objectForKey:@"enabled"] boolValue];
-    [SALiteConfig setValue:@(!on) forKey:@"enabled" bundleIdentifier:target];
 }
 
 // MARK: - 入口

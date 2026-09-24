@@ -32,7 +32,6 @@ static const int64_t SALiteAutoLaunchTimeout  = 3LL * NSEC_PER_SEC;      // 拉�
 static const int64_t SALitePostLaunchDelay    = 650LL * NSEC_PER_MSEC;   // 启动后复检
 static const int64_t SALiteStartupRecoveryStep = 900LL * NSEC_PER_MSEC;  // 逐个恢复的间隔
 static const double  SALiteCrashLoopWindow    = 12.0;                    // 崩溃风暴判定窗口
-static const double  SALiteBoundaryLeeway     = 2.0;                     // 定时器容差
 static const double  SALiteBoundaryEpsilon    = 0.5;                     // 边界是否已过期
 
 static const NSInteger SALiteTimerLease       = 0x77359400;              // 2s，纳秒
