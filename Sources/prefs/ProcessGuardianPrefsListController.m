@@ -223,8 +223,7 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    self.specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
-    [self.tableview reloadData];
+    [self reloadSpecifiers];
 }
 
 @end
