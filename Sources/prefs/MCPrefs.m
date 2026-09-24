@@ -131,11 +131,6 @@ NSArray<NSString *> *MCPriorityNames(void) {
     if (act || inact) [parts addObject:[NSString stringWithFormat:@"%@/%@MB",
                                         [@(act) stringValue], [@(inact) stringValue]]];
 
-    int locks = 0;
-    for (NSString *k in cfg.allKeys)
-        if ([k hasSuffix:@"Lock"] && [cfg[k] boolValue]) locks++;
-    if (locks) [parts addObject:[NSString stringWithFormat:@"%d 项强锁", locks]];
-
     return [parts componentsJoinedByString:@" · "];
 }
 

@@ -4,6 +4,7 @@
 //
 
 #import <Foundation/Foundation.h>
+#import <CoreFoundation/CoreFoundation.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
 #import <UIKit/UIKit.h>
@@ -110,6 +111,8 @@ static void SALiteApplicationProcessDidLaunch(id self, SEL _cmd, id process)
     if (SALiteOriginalProcessDidLaunch) {
         ((void (*)(id, SEL, id))SALiteOriginalProcessDidLaunch)(self, _cmd, process);
     }
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+        CFSTR("com.moxuan.processguardian/ApplyLimits"), NULL, NULL, true);
     if (SALiteRuntimeActive) {
         [[SALiteStayAliveManager sharedManager] applicationProcessDidLaunch:process];
     }

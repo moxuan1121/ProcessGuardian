@@ -79,26 +79,15 @@ static void MCLog(NSString *format, ...) {
  * 存 cfg 是因为「恢复默认」必须知道当初动过哪些开关，否则无从撤销。
  */
 static NSMutableDictionary<NSString *, NSDictionary *> *sApplied;
-/** key -> 最近一次应用时间（秒），实现 per-process CheckInterval 节流。 */
-static NSMutableDictionary<NSString *, NSNumber *> *sLastApply;
 
 static void MCForgetKey(NSString *key) {
     [sApplied removeObjectForKey:key];
-    [sLastApply removeObjectForKey:key];
 }
 
 static void MCRememberKey(NSString *key, pid_t pid, MCProcessConfig *cfg) {
     sApplied[key] = @{ @"pid": @(pid),
                        @"name": MCProcessNameForPid(pid) ?: key,
                        @"cfg": [cfg dictionaryValue] };
-    sLastApply[key] = @((long long)[[NSDate date] timeIntervalSince1970]);
-}
-
-static BOOL MCThrottledByKey(NSString *key, NSInteger interval) {
-    if (interval <= 0) return NO;
-    NSNumber *last = sLastApply[key];
-    if (!last) return NO;
-    return ((long long)[[NSDate date] timeIntervalSince1970] - last.longLongValue) < interval;
 }
 
 static void MCPublishStatus(BOOL enabled) {
@@ -128,21 +117,6 @@ static BOOL MCReadKernelPriority(pid_t pid, int32_t *priority) {
     return YES;
 }
 
-/** 取目标进程的 task port。失败时 kr 回传给调用方写日志。 */
-static BOOL MCCopyTaskForPid(pid_t pid, mach_port_t *task, kern_return_t *kr) {
-    mach_port_t t = MACH_PORT_NULL;
-    kern_return_t r = task_for_pid(mach_task_self(), pid, &t);
-    *kr = r;
-    if (r != KERN_SUCCESS || t == MACH_PORT_NULL) return NO;
-    *task = t;
-    return YES;
-}
-
-/** 三个 Mach 策略强锁共用的失败日志。 */
-static void MCLogTaskPortFailure(NSString *tag, kern_return_t kr) {
-    MCLog(@"[%@] 获取 task_port 失败 -> kr:%d (请检查 daemon.entitlements)", tag, kr);
-}
-
 /* ------------------------------------------------------------------ 恢复 */
 
 /**
@@ -164,8 +138,6 @@ static void MCRestoreProcess(MCProcessConfig *cfg, pid_t pid) {
     memorystatus_control(MEMORYSTATUS_CMD_SET_PROCESS_IS_FREEZABLE, pid, 1, NULL, 0);
 
     if (cfg.niceValue != 0) setpriority(PRIO_PROCESS, pid, 0);
-    if (cfg.stripManaged)   memorystatus_control(MEMORYSTATUS_CMD_SET_PROCESS_IS_MANAGED, pid, 1, NULL, 0);
-    if (cfg.dirtyTrackStrongLock) proc_track_dirty(pid, 0);
     MCLog(@"[内核] ：已被系统恢复");
 }
 
@@ -178,10 +150,8 @@ static void MCApplyMemLimits(MCProcessConfig *cfg, pid_t pid) {
     memorystatus_memlimit_properties_t ml = {0};
     ml.memlimit_active   = (int32_t)cfg.memLimitActive;
     ml.memlimit_inactive = (int32_t)cfg.memLimitInactive;
-    if (cfg.memLimitActive > 0 || cfg.memLimitInactive > 0 || !cfg.highWaterMarkLock) {
-        ml.memlimit_active_attr   |= MEMORYSTATUS_MEMLIMIT_ATTR_FATAL;
-        ml.memlimit_inactive_attr |= MEMORYSTATUS_MEMLIMIT_ATTR_FATAL;
-    }
+    ml.memlimit_active_attr = MEMORYSTATUS_MEMLIMIT_ATTR_FATAL;
+    ml.memlimit_inactive_attr = MEMORYSTATUS_MEMLIMIT_ATTR_FATAL;
 
     int err = memorystatus_control(MEMORYSTATUS_CMD_SET_MEMLIMIT_PROPERTIES, pid, 0,
                                    &ml, sizeof(ml));
@@ -205,27 +175,6 @@ static void MCApplyMemLimits(MCProcessConfig *cfg, pid_t pid) {
               ml.memlimit_active, back.memlimit_active);
 }
 
-/* 防内存溢出秒杀：把 fatal 限额降级成 high water mark（超限只回收，不立刻杀）。 */
-static void MCApplyHighWaterMark(MCProcessConfig *cfg, pid_t pid) {
-    if (!cfg.highWaterMarkLock || cfg.memLimitActive > 0 || cfg.memLimitInactive > 0) return;
-
-    int32_t mb = (int32_t)(cfg.memLimitInactive ?: cfg.memLimitActive);
-    if (mb <= 0) {
-        /* 没有显式限额时用内核换算出的默认值，避免把 0/-1 直接塞进 flags。 */
-        int32_t converted = 0;
-        if (memorystatus_control(MEMORYSTATUS_CMD_CONVERT_MEMLIMIT_MB, pid, 0,
-                                 &converted, sizeof(converted)) == 0)
-            mb = converted;
-    }
-    if (mb <= 0) {
-        MCLog(@"[防内存溢出秒杀] -> [跳过(无法确定限额)] err:0");
-        return;
-    }
-    int err = memorystatus_control(MEMORYSTATUS_CMD_SET_JETSAM_HIGH_WATER_MARK, pid,
-                                   (uint32_t)mb, NULL, 0);
-    MCLog(@"[防内存溢出秒杀] -> [%s] err:%d", err == 0 ? "成功" : "失败", err);
-}
-
 /* jetsam 优先级。-1=不动，0=交还系统接管，其余=强设。 */
 static void MCApplyJetsamPriority(MCProcessConfig *cfg, pid_t pid) {
     if (cfg.jetsamPriority == -1) {
@@ -234,10 +183,6 @@ static void MCApplyJetsamPriority(MCProcessConfig *cfg, pid_t pid) {
     }
     if (cfg.jetsamPriority == 0)
         MCLog(@"[内存优先级] 目标:0 -> [恢复默认, 系统接管]");
-
-    /* 托管进程的设置会被 assertiond 随时覆写，先剥离再设值才有意义。 */
-    if (cfg.stripManaged)
-        memorystatus_control(MEMORYSTATUS_CMD_SET_PROCESS_IS_MANAGED, pid, 0, NULL, 0);
 
     memorystatus_priority_properties_t pp = { .priority = (int32_t)cfg.jetsamPriority };
     int err = memorystatus_control(MEMORYSTATUS_CMD_SET_PRIORITY_PROPERTIES, pid, 0,
@@ -288,177 +233,6 @@ static void MCApplyNice(MCProcessConfig *cfg, pid_t pid) {
         MCLog(@"[内核] ：已被系统恢复 (实际: %d)", back);
 }
 
-/*
- * 脏数据强锁：置 TRACK、清掉 ALLOW_IDLE_EXIT，阻止系统在后台把进程直接空闲退出。
- * 必须读-改-写：直接 proc_track_dirty(pid, PROC_DIRTY_TRACK) 会覆盖掉
- * DEFER / LAUNCH_IN_PROGRESS 等由内核自己维护的位。
- */
-static void MCApplyDirtyTrack(MCProcessConfig *cfg, pid_t pid) {
-    if (!cfg.dirtyTrackStrongLock) return;
-
-    int state = 0;
-    int (*details)(pid_t, int *) = dlsym(RTLD_DEFAULT, "proc_dirty_details");
-    if (!details || details(pid, &state) != 0) {
-        MCLog(@"[脏数据强锁] 阻止 Idle Exit -> [内核:失败] err:%d", errno);
-        return;
-    }
-    int next = (state & ~(PROC_DIRTY_ALLOW_IDLE_EXIT | PROC_DIRTY_TRACK)) | PROC_DIRTY_TRACK;
-    if (proc_track_dirty(pid, (uint32_t)next) != 0) {
-        MCLog(@"[脏数据强锁] 阻止 Idle Exit -> [内核:失败] err:%d", errno);
-        return;
-    }
-    MCLog(@"[脏数据强锁] 阻止 Idle Exit -> [内核:成功] err:0");
-}
-
-/* Mach 调度强锁：让内核把该进程按前台应用调度。 */
-static void MCApplyMachForeground(MCProcessConfig *cfg, pid_t pid) {
-    if (!cfg.machForegroundLock) return;
-
-    mach_port_t task = MACH_PORT_NULL;
-    kern_return_t kr = KERN_FAILURE;
-    if (!MCCopyTaskForPid(pid, &task, &kr)) {
-        MCLogTaskPortFailure(@"Mach调度强锁", kr);
-        return;
-    }
-    integer_t role = TASK_FOREGROUND_APPLICATION;
-    kern_return_t r = task_policy_set(task, TASK_CATEGORY_POLICY, (task_policy_t)&role,
-                                      MC_TASK_CATEGORY_POLICY_COUNT);
-    MCLog(@"[Mach调度强锁] 注入前台应用身份 -> [%s] kr:%d",
-          r == KERN_SUCCESS ? "内核:成功" : "内核:失败", r);
-
-    /* Mach category 与 Darwin role 是两条独立通路，两条都打才算钉住前台身份。 */
-    setpriority(PRIO_DARWIN_ROLE, pid, PRIO_DARWIN_ROLE_UI_FOCAL);
-    mach_port_deallocate(mach_task_self(), task);
-}
-
-/* GPU 保活：允许后台渲染，否则一切到后台就掉帧。 */
-static void MCApplyGPURender(MCProcessConfig *cfg, pid_t pid) {
-    if (!cfg.gpuRenderLock) return;
-    int err = setpriority(PRIO_DARWIN_GPU, pid, PRIO_DARWIN_GPU_ALLOW);
-    MCLog(@"[GPU保活强锁] 后台渲染 -> [%s] err:%d",
-          err == 0 ? "内核:成功" : "内核:失败", err);
-}
-
-/* I/O 提权：解除 Darwin BG 节流 + 磁盘策略升到 IMPORTANT。 */
-static void MCApplyIOBoost(MCProcessConfig *cfg, pid_t pid) {
-    if (!cfg.ioBoostLock) return;
-    int e1 = setpriority(PRIO_DARWIN_PROCESS, pid, 0);   /* 清掉 PRIO_DARWIN_BG */
-    int e2 = setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_PROCESS, IOPOL_IMPORTANT);
-    MCLog(@"[I/O提权] 解除后台资源节流 -> [Darwin:%s Disk:%s] err1:%d err2:%d",
-          e1 == 0 ? "成功" : "失败", e2 == 0 ? "成功" : "失败", e1, e2);
-}
-
-/* 允许 coalition 的脏内存换出到磁盘，等价于给后台腾出更多可用内存。 */
-static void MCApplyCoalitionSwappable(MCProcessConfig *cfg, pid_t pid) {
-    if (!cfg.coalitionSwappableLock) return;
-
-    int32_t swappable = 0;
-    if (memorystatus_control(MEMORYSTATUS_CMD_GET_PROCESS_COALITION_IS_SWAPPABLE, pid, 0,
-                             &swappable, sizeof(swappable)) == 0 && swappable) {
-        MCLog(@"[虚拟内存Swap] 允许脏内存交换 -> [内核:已开启(系统默认)]");
-        return;
-    }
-    int err = memorystatus_control(MEMORYSTATUS_CMD_MARK_PROCESS_COALITION_SWAPPABLE,
-                                   pid, 0, NULL, 0);
-    if (err == 0)           MCLog(@"[虚拟内存Swap] 允许脏内存交换 -> [内核:成功] err:0");
-    else if (err == EINVAL) MCLog(@"[虚拟内存Swap] 允许脏内存交换 -> [内核:跳过(非进程组Leader)] err:%d", err);
-    else if (err == ENOTSUP)MCLog(@"[虚拟内存Swap] 允许脏内存交换 -> [内核:跳过(设备不支持Swap)] err:%d", err);
-    else                    MCLog(@"[虚拟内存Swap] 允许脏内存交换 -> [内核:失败] err:%d", err);
-}
-
-/* 关掉 wakeups / CPU 的 EXC_RESOURCE 监控，避免被系统以资源超标为名杀掉。 */
-static void MCApplyResourceMonitors(MCProcessConfig *cfg, pid_t pid) {
-    if (cfg.wakeupsMonitorLock) {
-        struct mc_rlimit_control_wakeupmon wm = { .wm_flags = WAKEMON_DISABLE, .wm_rate = 0 };
-        int err = proc_rlimit_control(pid, RLIMIT_WAKEUPS_MONITOR, &wm);
-        MCLog(@"[禁用 EXC_RESOURCE](WAKEUPS) -> [%s] err:%d",
-              err == 0 ? "内核:成功" : "内核:失败", err);
-    }
-    if (cfg.cpuUsageMonitorLock) {
-        uint32_t flags = 0;                        /* 0 = 取消已注册的 CPU 监控 */
-        int err = proc_rlimit_control(pid, RLIMIT_CPU_USAGE_MONITOR, &flags);
-        if (err == 0)           MCLog(@"[禁用 EXC_RESOURCE](CPU) -> [内核:成功] err:0");
-        else if (err == EINVAL) MCLog(@"[禁用 EXC_RESOURCE](CPU) -> [内核:跳过(进程默认无CPU限制)] err:%d", err);
-        else                    MCLog(@"[禁用 EXC_RESOURCE](CPU) -> [内核:失败] err:%d", err);
-    }
-}
-
-/* 吞吐量提权：OVERRIDE_QOS 拉高网络/磁盘吞吐，不改动 base QoS。 */
-static void MCApplyThroughput(MCProcessConfig *cfg, pid_t pid) {
-    if (!cfg.throughputQosLock) return;
-
-    mach_port_t task = MACH_PORT_NULL;
-    kern_return_t kr = KERN_FAILURE;
-    if (!MCCopyTaskForPid(pid, &task, &kr)) {
-        MCLogTaskPortFailure(@"Mach策略强锁", kr);
-        return;
-    }
-    mc_task_qos_policy_t qos = {
-        .task_latency_qos_tier   = MC_LATENCY_QOS_TIER_0,
-        .task_throughput_qos_tier = MC_THROUGHPUT_QOS_TIER_0,
-    };
-    kern_return_t r = task_policy_set(task, TASK_OVERRIDE_QOS_POLICY, (task_policy_t)&qos,
-                                      MC_TASK_QOS_POLICY_COUNT);
-    MCLog(@"[吞吐量提权] 强制网络/磁盘最高吞吐 -> [%s] kr:%d",
-          r == KERN_SUCCESS ? "内核:成功" : "内核:失败", r);
-    mach_port_deallocate(mach_task_self(), task);
-}
-
-/* App Nap 会把长时间无 UI 交互的进程降到极慢，这里直接关掉。 */
-static void MCApplySuppression(MCProcessConfig *cfg, pid_t pid) {
-    if (!cfg.suppressionPolicyLock) return;
-
-    mach_port_t task = MACH_PORT_NULL;
-    kern_return_t kr = KERN_FAILURE;
-    if (!MCCopyTaskForPid(pid, &task, &kr)) {
-        MCLogTaskPortFailure(@"Mach策略强锁", kr);
-        return;
-    }
-    mc_task_suppression_policy_t sp = { .suppression_status = 0 };
-    kern_return_t r = task_policy_set(task, TASK_SUPPRESSION_POLICY, (task_policy_t)&sp,
-                                      MC_TASK_SUPPRESSION_POLICY_COUNT);
-    MCLog(@"[禁用 App Nap] 禁用 App Nap -> [%s] kr:%d",
-          r == KERN_SUCCESS ? "内核:成功" : "内核:失败", r);
-    mach_port_deallocate(mach_task_self(), task);
-}
-
-/*
- * Base QoS 提权。flavor 8 收 struct task_qos_policy（2 个 int），
- * 10/11 各收一个 tier。三条都设才不会被系统按 base 拉回。
- */
-static void MCApplyBaseQoS(MCProcessConfig *cfg, pid_t pid) {
-    if (!cfg.baseQosLock) return;
-
-    mach_port_t task = MACH_PORT_NULL;
-    kern_return_t kr = KERN_FAILURE;
-    if (!MCCopyTaskForPid(pid, &task, &kr)) {
-        MCLogTaskPortFailure(@"QoS提权", kr);
-        return;
-    }
-    mc_task_qos_policy_t base = {
-        .task_latency_qos_tier   = MC_LATENCY_QOS_TIER_0,
-        .task_throughput_qos_tier = MC_THROUGHPUT_QOS_TIER_0,
-    };
-    int r8 = task_policy_set(task, TASK_BASE_QOS_POLICY, (task_policy_t)&base,
-                             MC_TASK_QOS_POLICY_COUNT);
-    integer_t lat = MC_LATENCY_QOS_TIER_0;
-    int r10 = task_policy_set(task, TASK_BASE_LATENCY_QOS_POLICY, (task_policy_t)&lat, 1);
-    integer_t thr = MC_THROUGHPUT_QOS_TIER_0;
-    int r11 = task_policy_set(task, TASK_BASE_THROUGHPUT_QOS_POLICY, (task_policy_t)&thr, 1);
-
-    MCLog(@"[QoS提权] 设定 Base QoS 为最高 -> [内核:%s] 8:%d 10:%d 11:%d",
-          (r8 == 0 && r10 == 0 && r11 == 0) ? "成功" : "失败", r8, r10, r11);
-    mach_port_deallocate(mach_task_self(), task);
-}
-
-/* 剥离系统托管标记。开启后系统不再有权随时改写我们的设置。 */
-static void MCApplyStripManaged(MCProcessConfig *cfg, pid_t pid) {
-    if (!cfg.stripManaged) return;
-    int err = memorystatus_control(MEMORYSTATUS_CMD_SET_PROCESS_IS_MANAGED, pid, 0, NULL, 0);
-    MCLog(@"[状态剥离] 目标: 剥离系统托管并开启强锁 -> [操作: %s] err: %d",
-          err == 0 ? "内核:成功" : "内核:失败", err);
-}
-
 /* 后台保活的最后一环：inactive band 升到 ELEVATED_INACTIVE 并退出冻结候选。 */
 static void MCApplyElevatedInactive(MCProcessConfig *cfg, pid_t pid) {
     if (cfg.jetsamPriority <= 0) return;
@@ -467,20 +241,9 @@ static void MCApplyElevatedInactive(MCProcessConfig *cfg, pid_t pid) {
 }
 
 static void MCApplyOne(MCProcessConfig *cfg, pid_t pid) {
-    MCApplyStripManaged(cfg, pid);
     MCApplyMemLimits(cfg, pid);
-    MCApplyHighWaterMark(cfg, pid);
     MCApplyJetsamPriority(cfg, pid);
     MCApplyNice(cfg, pid);
-    MCApplyDirtyTrack(cfg, pid);
-    MCApplyMachForeground(cfg, pid);
-    MCApplyGPURender(cfg, pid);
-    MCApplyIOBoost(cfg, pid);
-    MCApplyCoalitionSwappable(cfg, pid);
-    MCApplyResourceMonitors(cfg, pid);
-    MCApplyThroughput(cfg, pid);
-    MCApplySuppression(cfg, pid);
-    MCApplyBaseQoS(cfg, pid);
     MCApplyElevatedInactive(cfg, pid);
 }
 
@@ -502,9 +265,9 @@ static MCProcessConfig *MCSnapshotConfigFor(NSString *key) {
  *   1. 开关关闭 -> 全部恢复默认并挂起
  *   2. 配置里已移除的 key -> 恢复默认
  *   3. 每个 key 解析 PID；进程退出则 forget
- *   4. 存活进程按 CheckInterval 节流后应用
+ *   4. 新 PID 或配置变化立即应用，定时兜底时强制复核
  */
-static void MCRunSweep(void) {
+static void MCRunSweep(BOOL force) {
     NSDictionary *prefs = [MCCommon readPreferences];
     BOOL enabled = [prefs[@"Enabled"] boolValue];
 
@@ -548,10 +311,10 @@ static void MCRunSweep(void) {
         if (tracked && tracked.intValue != pid)
             MCLog(@"[进程] 目标: %@ 已启动 PID: %d", key, pid);
 
-        if (tracked.intValue == pid && MCThrottledByKey(key, cfg.checkInterval)) continue;
+        if (!force && tracked.intValue == pid &&
+            [sApplied[key][@"cfg"] isEqual:[cfg dictionaryValue]]) continue;
 
-        MCLog(@"[守护] 目标: %@ | 检测: %lds | PID: %d", key,
-              (long)(cfg.checkInterval ?: MCDefaultCheckInterval), pid);
+        MCLog(@"[守护] 目标: %@ | PID: %d", key, pid);
         MCApplyOne(cfg, pid);
         MCRememberKey(key, pid, cfg);
         MCLog(@"[守护] %@ PID:%d 完成", key, pid);
@@ -569,7 +332,7 @@ static void MCScheduleSweepAfter(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         sDebounceTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, sWorkerQueue);
-        dispatch_source_set_event_handler(sDebounceTimer, ^{ MCRunSweep(); });
+        dispatch_source_set_event_handler(sDebounceTimer, ^{ MCRunSweep(NO); });
         dispatch_resume(sDebounceTimer);
     });
     /* SpringBoard 连续切前台会产生一串通知；600ms 内的重复请求只留最后一次。 */
@@ -609,12 +372,11 @@ static void MCCheckAndGenerateDefaultConfig(void) {
     if (![apps isKindOfClass:[NSDictionary class]]) apps = nil;
 
     BOOL dirty = NO;
-    if (apps.count == 0) {
+    if (!apps) {
         prefs[@"AppConfigs"] = [MCCommon defaultAppConfigs];
         dirty = YES;
-        MCLog(@"[配置] 已生成默认预设参数");
+        MCLog(@"[配置] 已初始化空进程列表");
     }
-    if (prefs[@"CheckInterval"] == nil) { prefs[@"CheckInterval"] = @(MCDefaultCheckInterval); dirty = YES; }
     if (prefs[@"LogSizeLimit"]  == nil) { prefs[@"LogSizeLimit"]  = @(MCDefaultLogSizeLimitMB); dirty = YES; }
     if (prefs[@"Enabled"]       == nil) { prefs[@"Enabled"]       = @NO; dirty = YES; }
 
@@ -635,7 +397,6 @@ int main(int argc, const char *argv[]) {
         sLogFile   = [MCCommon logFilePath];
         sLogSizeLimitMB = MCDefaultLogSizeLimitMB;
         sApplied   = [NSMutableDictionary dictionary];
-        sLastApply = [NSMutableDictionary dictionary];
 
         MCRefreshRuntimeLimits();
         MCLog(@"[守护] ProcessGuardian 后台守护进程初始化完成");
@@ -651,7 +412,7 @@ int main(int argc, const char *argv[]) {
                                      sWorkerQueue, ^(int t) { MCScheduleSweepAfter(); }) != 0)
             MCLog(@"[守护] 通知注册失败，仅依赖周期巡检");
 
-        MCRunSweep();
+        MCRunSweep(NO);
 
         /* 1800s 兜底巡检：即使没有前台切换事件，被系统悄悄覆写的设置也会被拉回来。 */
         dispatch_source_t sweep = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, sWorkerQueue);
@@ -661,7 +422,7 @@ int main(int argc, const char *argv[]) {
         dispatch_source_set_event_handler(sweep, ^{
             MCRefreshRuntimeLimits();
             MCLog(@"[守护] 开始执行 %ds", (int)MCDefaultCheckInterval);
-            MCRunSweep();
+            MCRunSweep(YES);
             MCLog(@"[全局守护] %ds 周期巡检完成。", (int)MCDefaultCheckInterval);
         });
         dispatch_resume(sweep);

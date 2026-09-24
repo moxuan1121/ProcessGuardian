@@ -6,6 +6,7 @@
 #import "SALiteConfig.h"
 #import <notify.h>
 #import <sys/stat.h>
+#import <roothide.h>
 
 NSString *const SALiteBundleID = @"com.moxuan.processguardian";
 NSString *const SALitePrefsDomain = @"com.moxuan.processguardian.preferences";
@@ -42,14 +43,15 @@ static const NSInteger SALiteMinutesPerDay = 1439; // 24*60-1
 /// 写 plist 并放开权限，便于 SpringBoard / Preferences 双向读写
 static NSDictionary *SALiteReadPlist(NSString *path)
 {
-    return [NSDictionary dictionaryWithContentsOfFile:path];
+    return [NSDictionary dictionaryWithContentsOfFile:jbroot(path)];
 }
 
 static void SALiteWritePlist(NSDictionary *dict, NSString *path)
 {
     if (![dict isKindOfClass:[NSDictionary class]] || path.length == 0) return;
-    [dict writeToFile:path atomically:YES];
-    chmod([path fileSystemRepresentation], 0666);
+    NSString *actual = jbroot(path);
+    [dict writeToFile:actual atomically:YES];
+    chmod([actual fileSystemRepresentation], 0666);
 }
 
 @implementation SALiteConfig
@@ -254,7 +256,7 @@ static void SALiteWritePlist(NSDictionary *dict, NSString *path)
 
 + (NSString *)sharedPathForPath:(NSString *)path
 {
-    return path;
+    return jbroot(path);
 }
 
 + (NSDictionary *)savedNavigationState
@@ -276,7 +278,7 @@ static void SALiteWritePlist(NSDictionary *dict, NSString *path)
 
 + (void)clearNavigationState
 {
-    [[NSFileManager defaultManager] removeItemAtPath:SALiteNavigationPlistPath error:NULL];
+    [[NSFileManager defaultManager] removeItemAtPath:jbroot(SALiteNavigationPlistPath) error:NULL];
 }
 
 @end

@@ -28,25 +28,10 @@ extern const double  MCDefaultLogSizeLimitMB;   /* 2 MB  */
 @property (nonatomic, assign) NSInteger memLimitInactive;  /* MB；同上 */
 @property (nonatomic, assign) NSInteger jetsamPriority;    /* -1=不动，0=交还系统 */
 @property (nonatomic, assign) NSInteger niceValue;         /* PRIO_MIN..PRIO_MAX */
-@property (nonatomic, assign) NSInteger checkInterval;     /* 秒；0=默认 1800 */
 @property (nonatomic, assign) NSInteger cpuThreshold;     /* 前台 CPU 百分比；0=关闭 */
 @property (nonatomic, assign) NSInteger cpuDuration;      /* 连续超限秒数 */
 @property (nonatomic, assign) BOOL keepAlive;
 @property (nonatomic, assign) BOOL relaunchAfterRespring;
-
-/* 开关型强锁 */
-@property (nonatomic, assign) BOOL stripManaged;
-@property (nonatomic, assign) BOOL dirtyTrackStrongLock;
-@property (nonatomic, assign) BOOL machForegroundLock;
-@property (nonatomic, assign) BOOL gpuRenderLock;
-@property (nonatomic, assign) BOOL ioBoostLock;
-@property (nonatomic, assign) BOOL highWaterMarkLock;
-@property (nonatomic, assign) BOOL coalitionSwappableLock;
-@property (nonatomic, assign) BOOL wakeupsMonitorLock;
-@property (nonatomic, assign) BOOL cpuUsageMonitorLock;
-@property (nonatomic, assign) BOOL throughputQosLock;
-@property (nonatomic, assign) BOOL suppressionPolicyLock;
-@property (nonatomic, assign) BOOL baseQosLock;
 
 @property (nonatomic, copy)   NSString *remark;       /* 偏好面板显示名 */
 

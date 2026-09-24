@@ -33,7 +33,7 @@ jobs:
           make package THEOS_PACKAGE_SCHEME=roothide FINALPACKAGE=1 TARGET=iphone:clang:17.5:15.0 SYSROOT="$SYSROOT"
       - name: Verify deb contents
         run: |
-          python3 -c 'import plistlib; assert len(plistlib.load(open("Sources/prefs/Root.plist", "rb"))["items"]) > 0'
+          python3 -c 'import plistlib; assert len(plistlib.load(open("Sources/prefs/Root.plist", "rb"))["items"]) == 15'
           deb="$(find packages -maxdepth 1 -name 'com.moxuan.processguardian_*.deb' -print -quit)"
           test -n "$deb" && test -s "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = com.moxuan.processguardian
@@ -46,6 +46,8 @@ jobs:
           grep -q 'ProcessGuardianPrefs.bundle/Info.plist' <<<"$contents"
           grep -q 'ProcessGuardianPrefs.bundle/Root.plist' <<<"$contents"
           grep -q 'ProcessGuardianPrefs.bundle/icon.png' <<<"$contents"
+          grep -q 'ProcessGuardianPrefs.bundle/icon@2x.png' <<<"$contents"
+          grep -q 'ProcessGuardianPrefs.bundle/icon@3x.png' <<<"$contents"
           grep -q 'Library/LaunchDaemons/com.moxuan.processguardiand.plist' <<<"$contents"
           grep -q 'usr/lib/TweakInject/ProcessGuardian.dylib' <<<"$contents"
           grep -q 'usr/lib/TweakInject/ProcessGuardian.plist' <<<"$contents"
@@ -53,6 +55,7 @@ jobs:
           grep -q 'usr/lib/TweakInject/ProcessGuardianStay.plist' <<<"$contents"
           ! grep -q 'Library/MobileSubstrate/' <<<"$contents"
           ! grep -q 'var/jb/' <<<"$contents"
+          ! grep -Eq 'usr/lib/(libellekit|libsubstrate)|usr/libexec/ellekit|CydiaSubstrate.framework' <<<"$contents"
       - uses: actions/upload-artifact@v4
         with:
           name: processguardian-roothide

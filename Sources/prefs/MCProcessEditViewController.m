@@ -13,10 +13,9 @@
 
 typedef NS_ENUM(NSInteger, MCEditRowKind) {
     MCEditRowText,     /* 文本（进程名 / 备注） */
-    MCEditRowNumber,   /* 数字（限额 / nice / 检测周期） */
+    MCEditRowNumber,   /* 数字（限额 / nice / CPU） */
     MCEditRowSwitch,   /* 开关 */
     MCEditRowOption,   /* 跳子页选择 */
-    MCEditRowAction,   /* 按钮（删除） */
 };
 
 @interface MCEditRow : NSObject
@@ -112,8 +111,6 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
 
 @implementation MCProcessEditViewController
 
-static NSString *const kWarningShownKey = @"MemoryControlRe.WarningShown";
-
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"编辑进程";
@@ -125,36 +122,11 @@ static NSString *const kWarningShownKey = @"MemoryControlRe.WarningShown";
 
     [self buildRows];
     [self setupTable];
-    [self showFirstRunWarningIfNeeded];
-}
-
-/**
- * 重量级强锁对大型 App 有实际风险（改坏内存生命周期会让它自杀），
- * 所以第一次进这一页必须把这段提示完整说完，而不是塞在小字 footer 里。
- */
-- (void)showFirstRunWarningIfNeeded {
-    if ([[NSUserDefaults standardUserDefaults] boolForKey:kWarningShownKey]) return;
-
-    NSString *warning =
-        @"提示：建议不要对微信、大型游戏或大型应用同时开启[脏数据强锁]、[Mach前台锁定]与"
-        @"[GPU后台渲染保活]等重量级强锁，大型应用具备复杂的内存调度生命周期，修改状态可能会导致"
-        @"其无法释放图片缓存与渲染上下文，最终可能会因 mach_vm_allocate_kernel 无法分配底层物理"
-        @"内存而触发内部 SIGABRT 自杀或可能导致应用出现异常，出现应用异常可自行尝试排除关闭功能"
-        @"并重启目标进程，如不懂也不要瞎勾八修改系统进程，使用默认配置即可";
-
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"风险提示"
-                                                              message:warning
-                                                       preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"我已了解" style:UIAlertActionStyleDefault
-                                       handler:^(UIAlertAction *action) {
-        [[NSUserDefaults standardUserDefaults] setBool:YES forKey:kWarningShownKey];
-    }]];
-    [self presentViewController:a animated:YES completion:nil];
 }
 
 - (void)buildRows {
     NSMutableArray *identity = [NSMutableArray array], *limits = [NSMutableArray array],
-                   *switches = [NSMutableArray array], *timing = [NSMutableArray array];
+                   *switches = [NSMutableArray array];
 
     [identity addObject:[MCEditRow rowWithKind:MCEditRowText title:@"目标进程名 / 包名"
                      footer:@"通过包名或进程名识别进程" key:@"__identifier"]];
@@ -184,50 +156,8 @@ static NSString *const kWarningShownKey = @"MemoryControlRe.WarningShown";
     [switches addObject:[MCEditRow rowWithKind:MCEditRowSwitch title:@"注销后自动拉起"
         footer:@"重启 SpringBoard 后按顺序恢复已守护的应用" key:@"RelaunchAfterRespring"]];
 
-    [switches addObject:[MCEditRow rowWithKind:MCEditRowSwitch title:@"剥离系统托管并强锁"
-        footer:@"尝试剥离 P_MEMSTAT_MANAGED 内核标记，防止配置被系统恢复，并同时开启 ELEVATED_INACTIVE 非活跃提升保护"
-        key:@"StripManaged"]];
-    [switches addObject:[MCEditRow rowWithKind:MCEditRowSwitch title:@"脏数据强锁"
-        footer:@"尝试向内核强制注册脏数据标记，并去除 PROC_DIRTY_ALLOW_IDLE_EXIT 权限。防止进程进入 Idle 休眠队列而被干掉"
-        key:@"DirtyTrackStrongLock"]];
-    [switches addObject:[MCEditRow rowWithKind:MCEditRowSwitch title:@"Mach 调度前台锁定"
-        footer:@"调用 task_policy_set 尝试在 Mach 内核层将目标注入 TASK_FOREGROUND_APPLICATION 身份，对抗 CPU 后台挂起与 Throttle 机制"
-        key:@"MachForegroundLock"]];
-    [switches addObject:[MCEditRow rowWithKind:MCEditRowSwitch title:@"GPU 后台渲染保活"
-        footer:@"设置 PRIO_DARWIN_GPU_ALLOW 权限，允许进程在后台持续调用硬件渲染资源，减少因违规调用 OpenGL/Metal 被系统终止的概率"
-        key:@"GPURenderLock"]];
-    [switches addObject:[MCEditRow rowWithKind:MCEditRowSwitch title:@"解除后台资源节流"
-        footer:@"防止进程在后台进行大量磁盘 I/O 读写时，被内核标记为 IOPOL_THROTTLE 降级甚至杀死，提升后台读写优先级"
-        key:@"IOBoostLock"]];
-    [switches addObject:[MCEditRow rowWithKind:MCEditRowSwitch title:@"防内存溢出被杀"
-        footer:@"仅在没有设置明确内存上限时生效；有上限时超限仍会杀进程"
-        key:@"HighWaterMarkLock"]];
-    [switches addObject:[MCEditRow rowWithKind:MCEditRowSwitch title:@"允许虚拟内存交换(Swap)"
-        footer:@"允许内核将进程的脏内存压缩并交换到磁盘(Coalition Swappable)，可大幅降低物理内存不足时的闪退率"
-        key:@"CoalitionSwappableLock"]];
-    [switches addObject:[MCEditRow rowWithKind:MCEditRowSwitch title:@"禁用 EXC_RESOURCE(唤醒)"
-        footer:@"解除系统对进程频繁唤醒的监控，防止日志中出现 WAKEUPS 异常强杀"
-        key:@"WakeupsMonitorLock"]];
-    [switches addObject:[MCEditRow rowWithKind:MCEditRowSwitch title:@"禁用 EXC_RESOURCE(CPU)"
-        footer:@"解除系统对进程 CPU 占用过高的监控，防止因资源使用过多被强杀"
-        key:@"CPUUsageMonitorLock"]];
-    [switches addObject:[MCEditRow rowWithKind:MCEditRowSwitch title:@"网络/磁盘最高吞吐量"
-        footer:@"强制设定网络和磁盘I/O为最高吞吐量级别(Tier 0)，防止后台下载或写入被系统降级限速"
-        key:@"ThroughputQoSLock"]];
-    [switches addObject:[MCEditRow rowWithKind:MCEditRowSwitch title:@"禁用 App Nap"
-        footer:@"剥夺系统的 TASK_SUPPRESSION_POLICY 权限，可防止应用在后台被系统彻底剥夺CPU时间片而假死"
-        key:@"SuppressionPolicyLock"]];
-    [switches addObject:[MCEditRow rowWithKind:MCEditRowSwitch title:@"QoS 提权"
-        footer:@"调用 TASK_BASE_QOS_POLICY 将进程提高层级(Tier 0)，从内核调度层面防止被分配到效能核心(E-Core)或被系统限速"
-        key:@"BaseQoSLock"]];
-
-    [timing addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"检测周期 (默认1800秒)"
-        footer:@"写0或未写则默认为1800秒" key:@"CheckInterval"]];
-    [timing addObject:[MCEditRow rowWithKind:MCEditRowAction title:@"删除此进程记录"
-        footer:@"仅移除本面板的配置项；已生效的内核设置会在下一次巡检时恢复默认" key:@"__delete"]];
-
-    self.sections = @[ identity, limits, switches, timing ];
-    self.sectionTitles = [@[ @"目标说明:", @"内存限制:", @"强锁选项:", @"检测周期与备注:" ] mutableCopy];
+    self.sections = @[ identity, limits, switches ];
+    self.sectionTitles = [@[ @"目标说明", @"内存限制", @"强锁选项" ] mutableCopy];
 }
 
 - (void)setupTable {
@@ -264,26 +194,6 @@ static NSString *const kWarningShownKey = @"MemoryControlRe.WarningShown";
     prefs[@"AppConfigs"] = apps;
     /* 改完就叫醒守护进程：用户填完限额期待的是「立刻生效」，不是等下一轮巡检。 */
     [MCPrefs writePrefs:prefs wakeDaemon:YES];
-}
-
-- (void)deleteEntry {
-    NSMutableDictionary *prefs = [MCPrefs readPrefs];
-    NSMutableDictionary *apps = [prefs[@"AppConfigs"] mutableCopy];
-    [apps removeObjectForKey:self.targetIdentifier];
-    prefs[@"AppConfigs"] = apps;
-    [MCPrefs writePrefs:prefs wakeDaemon:YES];
-    [self.navigationController popViewControllerAnimated:YES];
-}
-
-- (void)confirmDelete {
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"删除此进程记录"
-                                                              message:self.targetIdentifier
-                                                       preferredStyle:UIAlertControllerStyleAlert];
-    __weak typeof(self) ws = self;
-    [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-    [a addAction:[UIAlertAction actionWithTitle:@"删除" style:UIAlertActionStyleDestructive
-                                        handler:^(UIAlertAction *x) { [ws deleteEntry]; }]];
-    [self presentViewController:a animated:YES completion:nil];
 }
 
 - (void)commitTextForRow:(MCEditRow *)row text:(NSString *)text {
@@ -357,9 +267,6 @@ static NSString *const kWarningShownKey = @"MemoryControlRe.WarningShown";
     if (row.kind == MCEditRowOption) {
         c.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         c.detailTextLabel.text = [NSString stringWithFormat:@"%d", [self.config[row.key] intValue]];
-    } else if (row.kind == MCEditRowAction) {
-        c.textLabel.textColor = [UIColor systemRedColor];
-        c.textLabel.textAlignment = NSTextAlignmentCenter;
     }
     return c;
 }
@@ -397,7 +304,6 @@ static NSString *const kWarningShownKey = @"MemoryControlRe.WarningShown";
     [tv deselectRowAtIndexPath:path animated:YES];
     MCEditRow *row = self.sections[path.section][path.row];
 
-    if (row.kind == MCEditRowAction) { [self confirmDelete]; return; }
     if (row.kind != MCEditRowOption) return;
 
     MCIntOptionPicker *picker = [MCIntOptionPicker new];

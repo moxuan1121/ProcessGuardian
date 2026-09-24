@@ -3,6 +3,7 @@
 #import <libproc_internal.h>
 #import <sys/sysctl.h>
 #import <unistd.h>
+#import <roothide.h>
 
 NSString *const MCDomain                 = @"com.moxuan.processguardian";
 NSString *const MCApplyLimitsNotification = @"com.moxuan.processguardian/ApplyLimits";
@@ -25,24 +26,10 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
     c.memLimitInactive    = [dict[@"MemLimitInactive"] integerValue];
     c.jetsamPriority      = dict[@"JetsamPriority"] ? [dict[@"JetsamPriority"] integerValue] : -1;
     c.niceValue           = dict[@"NiceValue"] ? [dict[@"NiceValue"] integerValue] : 0;
-    c.checkInterval       = [dict[@"CheckInterval"] integerValue];
     c.cpuThreshold        = [dict[@"CPUThreshold"] integerValue];
     c.cpuDuration         = [dict[@"CPUDuration"] integerValue];
     c.keepAlive           = [dict[@"KeepAlive"] boolValue];
     c.relaunchAfterRespring = [dict[@"RelaunchAfterRespring"] boolValue];
-
-    c.stripManaged          = [dict[@"StripManaged"] boolValue];
-    c.dirtyTrackStrongLock  = [dict[@"DirtyTrackStrongLock"] boolValue];
-    c.machForegroundLock    = [dict[@"MachForegroundLock"] boolValue];
-    c.gpuRenderLock         = [dict[@"GPURenderLock"] boolValue];
-    c.ioBoostLock           = [dict[@"IOBoostLock"] boolValue];
-    c.highWaterMarkLock     = [dict[@"HighWaterMarkLock"] boolValue];
-    c.coalitionSwappableLock = [dict[@"CoalitionSwappableLock"] boolValue];
-    c.wakeupsMonitorLock    = [dict[@"WakeupsMonitorLock"] boolValue];
-    c.cpuUsageMonitorLock   = [dict[@"CPUUsageMonitorLock"] boolValue];
-    c.throughputQosLock     = [dict[@"ThroughputQoSLock"] boolValue];
-    c.suppressionPolicyLock = [dict[@"SuppressionPolicyLock"] boolValue];
-    c.baseQosLock           = [dict[@"BaseQoSLock"] boolValue];
 
     c.remark = [dict[@"Remark"] isKindOfClass:[NSString class]] ? dict[@"Remark"] : @"";
     return c;
@@ -62,23 +49,10 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
         @"MemLimitInactive":       @(self.memLimitInactive),
         @"JetsamPriority":         @(self.jetsamPriority),
         @"NiceValue":              @(self.niceValue),
-        @"CheckInterval":          @(self.checkInterval),
         @"CPUThreshold":           @(self.cpuThreshold),
         @"CPUDuration":            @(self.cpuDuration),
         @"KeepAlive":              @(self.keepAlive),
         @"RelaunchAfterRespring":   @(self.relaunchAfterRespring),
-        @"StripManaged":           @(self.stripManaged),
-        @"DirtyTrackStrongLock":   @(self.dirtyTrackStrongLock),
-        @"MachForegroundLock":     @(self.machForegroundLock),
-        @"GPURenderLock":          @(self.gpuRenderLock),
-        @"IOBoostLock":            @(self.ioBoostLock),
-        @"HighWaterMarkLock":      @(self.highWaterMarkLock),
-        @"CoalitionSwappableLock": @(self.coalitionSwappableLock),
-        @"WakeupsMonitorLock":     @(self.wakeupsMonitorLock),
-        @"CPUUsageMonitorLock":    @(self.cpuUsageMonitorLock),
-        @"ThroughputQoSLock":      @(self.throughputQosLock),
-        @"SuppressionPolicyLock":  @(self.suppressionPolicyLock),
-        @"BaseQoSLock":            @(self.baseQosLock),
         @"Remark":                 self.remark ?: @"",
     };
 }
@@ -87,11 +61,7 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
     if (self.memLimitActive != 0 || self.memLimitInactive != 0) return YES;
     if (self.jetsamPriority != -1) return YES;
     if (self.niceValue != 0) return YES;
-    return self.stripManaged || self.dirtyTrackStrongLock || self.machForegroundLock ||
-           self.gpuRenderLock || self.ioBoostLock || self.highWaterMarkLock ||
-           self.coalitionSwappableLock || self.wakeupsMonitorLock ||
-           self.cpuUsageMonitorLock || self.throughputQosLock ||
-           self.suppressionPolicyLock || self.baseQosLock;
+    return NO;
 }
 
 - (id)copyWithZone:(NSZone *)zone {
@@ -101,23 +71,10 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
     c.memLimitInactive = _memLimitInactive;
     c.jetsamPriority = _jetsamPriority;
     c.niceValue = _niceValue;
-    c.checkInterval = _checkInterval;
     c.cpuThreshold = _cpuThreshold;
     c.cpuDuration = _cpuDuration;
     c.keepAlive = _keepAlive;
     c.relaunchAfterRespring = _relaunchAfterRespring;
-    c.stripManaged = _stripManaged;
-    c.dirtyTrackStrongLock = _dirtyTrackStrongLock;
-    c.machForegroundLock = _machForegroundLock;
-    c.gpuRenderLock = _gpuRenderLock;
-    c.ioBoostLock = _ioBoostLock;
-    c.highWaterMarkLock = _highWaterMarkLock;
-    c.coalitionSwappableLock = _coalitionSwappableLock;
-    c.wakeupsMonitorLock = _wakeupsMonitorLock;
-    c.cpuUsageMonitorLock = _cpuUsageMonitorLock;
-    c.throughputQosLock = _throughputQosLock;
-    c.suppressionPolicyLock = _suppressionPolicyLock;
-    c.baseQosLock = _baseQosLock;
     c.remark = [self.remark copy];
     return c;
 }
@@ -134,7 +91,7 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
 @implementation MCCommon
 
 + (NSString *)preferencesDirectory {
-    return @"/var/mobile/Library/Preferences";
+    return jbroot(@"/var/mobile/Library/Preferences");
 }
 
 + (NSString *)preferencesPlistPath {
@@ -148,7 +105,7 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
 
 + (NSString *)logFilePath {
     /* RootHide 中守护进程与设置面板共用此目录。 */
-    NSString *dir = @"/var/mobile/Library/Logs";
+    NSString *dir = jbroot(@"/var/mobile/Library/Logs");
     [[NSFileManager defaultManager] createDirectoryAtPath:dir
                               withIntermediateDirectories:YES
                                                attributes:nil
@@ -180,81 +137,7 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
     return out;
 }
 
-+ (NSDictionary *)defaultAppConfigs {
-    /* 守护进程自身的邻居进程一旦被降级会牵连整个系统，因此默认预设只给最保守的组合。 */
-    return @{
-        @"SpringBoard": @{
-            @"MemLimitActive": @0, @"MemLimitInactive": @0,
-            @"JetsamPriority": @(-1), @"NiceValue": @(-10), @"CheckInterval": @0,
-            @"StripManaged": @YES, @"DirtyTrackStrongLock": @YES,
-            @"MachForegroundLock": @NO, @"GPURenderLock": @NO, @"IOBoostLock": @YES,
-            @"HighWaterMarkLock": @NO, @"CoalitionSwappableLock": @NO,
-            @"WakeupsMonitorLock": @YES, @"CPUUsageMonitorLock": @YES,
-            @"ThroughputQoSLock": @NO, @"SuppressionPolicyLock": @NO, @"BaseQoSLock": @NO,
-            @"Remark": @"桌面",
-        },
-        @"backboardd": @{
-            @"MemLimitActive": @0, @"MemLimitInactive": @0,
-            @"JetsamPriority": @(-1), @"NiceValue": @0, @"CheckInterval": @0,
-            @"StripManaged": @YES, @"DirtyTrackStrongLock": @NO,
-            @"MachForegroundLock": @NO, @"GPURenderLock": @NO, @"IOBoostLock": @NO,
-            @"HighWaterMarkLock": @NO, @"CoalitionSwappableLock": @NO,
-            @"WakeupsMonitorLock": @NO, @"CPUUsageMonitorLock": @NO,
-            @"ThroughputQoSLock": @NO, @"SuppressionPolicyLock": @NO, @"BaseQoSLock": @NO,
-            @"Remark": @"触摸服务",
-        },
-        @"runningboardd": @{
-            @"MemLimitActive": @0, @"MemLimitInactive": @0,
-            @"JetsamPriority": @(-1), @"NiceValue": @0, @"CheckInterval": @0,
-            @"StripManaged": @YES, @"DirtyTrackStrongLock": @NO,
-            @"MachForegroundLock": @NO, @"GPURenderLock": @NO, @"IOBoostLock": @NO,
-            @"HighWaterMarkLock": @NO, @"CoalitionSwappableLock": @NO,
-            @"WakeupsMonitorLock": @NO, @"CPUUsageMonitorLock": @NO,
-            @"ThroughputQoSLock": @NO, @"SuppressionPolicyLock": @NO, @"BaseQoSLock": @NO,
-            @"Remark": @"进程生命周期",
-        },
-        @"dasd": @{
-            @"MemLimitActive": @0, @"MemLimitInactive": @0,
-            @"JetsamPriority": @(-1), @"NiceValue": @0, @"CheckInterval": @0,
-            @"StripManaged": @NO, @"DirtyTrackStrongLock": @NO,
-            @"MachForegroundLock": @NO, @"GPURenderLock": @NO, @"IOBoostLock": @NO,
-            @"HighWaterMarkLock": @NO, @"CoalitionSwappableLock": @NO,
-            @"WakeupsMonitorLock": @NO, @"CPUUsageMonitorLock": @NO,
-            @"ThroughputQoSLock": @NO, @"SuppressionPolicyLock": @NO, @"BaseQoSLock": @NO,
-            @"Remark": @"调度守护",
-        },
-        @"kbd": @{
-            @"MemLimitActive": @0, @"MemLimitInactive": @0,
-            @"JetsamPriority": @(-1), @"NiceValue": @0, @"CheckInterval": @0,
-            @"StripManaged": @NO, @"DirtyTrackStrongLock": @NO,
-            @"MachForegroundLock": @NO, @"GPURenderLock": @NO, @"IOBoostLock": @NO,
-            @"HighWaterMarkLock": @NO, @"CoalitionSwappableLock": @NO,
-            @"WakeupsMonitorLock": @NO, @"CPUUsageMonitorLock": @NO,
-            @"ThroughputQoSLock": @NO, @"SuppressionPolicyLock": @NO, @"BaseQoSLock": @NO,
-            @"Remark": @"键盘",
-        },
-        @"sharingd": @{
-            @"MemLimitActive": @0, @"MemLimitInactive": @0,
-            @"JetsamPriority": @(-1), @"NiceValue": @0, @"CheckInterval": @0,
-            @"StripManaged": @NO, @"DirtyTrackStrongLock": @NO,
-            @"MachForegroundLock": @NO, @"GPURenderLock": @NO, @"IOBoostLock": @NO,
-            @"HighWaterMarkLock": @NO, @"CoalitionSwappableLock": @NO,
-            @"WakeupsMonitorLock": @NO, @"CPUUsageMonitorLock": @NO,
-            @"ThroughputQoSLock": @NO, @"SuppressionPolicyLock": @NO, @"BaseQoSLock": @NO,
-            @"Remark": @"共享服务",
-        },
-        @"com.tencent.xin": @{
-            @"MemLimitActive": @0, @"MemLimitInactive": @0,
-            @"JetsamPriority": @(-1), @"NiceValue": @0, @"CheckInterval": @0,
-            @"StripManaged": @NO, @"DirtyTrackStrongLock": @NO,
-            @"MachForegroundLock": @NO, @"GPURenderLock": @NO, @"IOBoostLock": @NO,
-            @"HighWaterMarkLock": @NO, @"CoalitionSwappableLock": @NO,
-            @"WakeupsMonitorLock": @NO, @"CPUUsageMonitorLock": @NO,
-            @"ThroughputQoSLock": @NO, @"SuppressionPolicyLock": @NO, @"BaseQoSLock": @NO,
-            @"Remark": @"微信",
-        },
-    };
-}
++ (NSDictionary *)defaultAppConfigs { return @{}; }
 
 + (NSString *)timestampString {
     static NSDateFormatter *fmt;

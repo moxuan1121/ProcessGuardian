@@ -16,6 +16,7 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
 static NSString *const kTGChatURL   = @"https://t.me/iosdumpzzz";
 
 @interface ProcessGuardianPrefsListController () <UIDocumentPickerDelegate>
+@property (nonatomic, strong) NSArray<PSSpecifier *> *rootSpecifiers;
 @end
 
 @implementation ProcessGuardianPrefsListController
@@ -23,8 +24,9 @@ static NSString *const kTGChatURL   = @"https://t.me/iosdumpzzz";
 /* ---------------------------------------------------- 读写（单一走文件） */
 
 - (id)preferenceValueForSpecifier:(PSSpecifier *)specifier {
-    if (!specifier.property) return nil;
-    id v = [MCPrefs readPrefs][specifier.property];
+    NSString *key = specifier.key;
+    if (!key.length) return [super preferenceValueForSpecifier:specifier];
+    id v = [MCPrefs readPrefs][key];
     /* 开关类取值必须回成 NSNumber，否则 PSSwitchCell 会拿 nil 当 0 又写回一次。 */
     if ([specifier.cellClass isSubclassOfClass:NSClassFromString(@"PSSwitchCell")])
         return v ? @([v boolValue]) : @NO;
@@ -32,16 +34,15 @@ static NSString *const kTGChatURL   = @"https://t.me/iosdumpzzz";
 }
 
 - (void)setPreferenceValue:(id)value specifier:(PSSpecifier *)specifier {
-    NSString *key = specifier.property;
-    if (!key) return;
+    NSString *key = specifier.key;
+    if (!key.length) { [super setPreferenceValue:value specifier:specifier]; return; }
 
     NSMutableDictionary *prefs = [MCPrefs readPrefs];
     if (value == nil || [value isEqual:@""]) [prefs removeObjectForKey:key];
     else prefs[key] = value;
 
     /* 开关和强锁直接决定守护进程要不要动手，改完就叫醒它，不必等 1800s 巡检。 */
-    BOOL wake = [key isEqualToString:@"Enabled"] || [key hasSuffix:@"Lock"] ||
-                [key isEqualToString:@"CheckInterval"];
+    BOOL wake = [key isEqualToString:@"Enabled"];
     [MCPrefs writePrefs:prefs wakeDaemon:wake];
 }
 
@@ -72,7 +73,7 @@ static NSString *const kTGChatURL   = @"https://t.me/iosdumpzzz";
 }
 
 - (void)showProcessList {
-    [self pushSection:@"MCProcessListViewController"];
+    [self presentProcessSheet:[MCProcessListViewController new]];
 }
 
 - (void)addNewProcess {
@@ -81,7 +82,20 @@ static NSString *const kTGChatURL   = @"https://t.me/iosdumpzzz";
     picker.onPick = ^(NSString *identifier) {
         [ws addProcessWithIdentifier:identifier];
     };
-    [self.navigationController pushViewController:picker animated:YES];
+    [self presentProcessSheet:picker];
+}
+
+- (void)presentProcessSheet:(UIViewController *)controller {
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:controller];
+    nav.modalPresentationStyle = UIModalPresentationPageSheet;
+    nav.sheetPresentationController.detents = @[UISheetPresentationControllerDetent.largeDetent];
+    controller.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc]
+        initWithBarButtonSystemItem:UIBarButtonSystemItemCancel target:self action:@selector(closeProcessSheet)];
+    [self presentViewController:nav animated:YES completion:nil];
+}
+
+- (void)closeProcessSheet {
+    [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 - (void)addProcessWithIdentifier:(NSString *)identifier {
@@ -99,7 +113,8 @@ static NSString *const kTGChatURL   = @"https://t.me/iosdumpzzz";
 - (void)pushEditForIdentifier:(NSString *)identifier {
     MCProcessEditViewController *vc = [MCProcessEditViewController new];
     vc.targetIdentifier = identifier;
-    [self.navigationController pushViewController:vc animated:YES];
+    UINavigationController *nav = (UINavigationController *)self.presentedViewController;
+    [nav pushViewController:vc animated:YES];
 }
 
 - (void)pushSection:(NSString *)className {
@@ -239,7 +254,17 @@ static NSString *const kTGChatURL   = @"https://t.me/iosdumpzzz";
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"ProcessGuardian";
-    self.specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    if ([[MCPrefs readPrefs][@"BackgroundRefresh"] boolValue])
+        [self.tableview reloadData];
+}
+
+- (NSArray<PSSpecifier *> *)specifiers {
+    if (!_rootSpecifiers) _rootSpecifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
+    return _rootSpecifiers;
 }
 
 @end

@@ -45,7 +45,7 @@ ProcessGuardianPrefs_FILES = \
 ProcessGuardianPrefs_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/Sources/libproc -Wno-deprecated-declarations
 ProcessGuardianPrefs_FRAMEWORKS = UIKit Foundation
 ProcessGuardianPrefs_INFO_PLIST = packaging/PrefsInfo.plist
-ProcessGuardianPrefs_RESOURCE_FILES = Sources/prefs/Root.plist Sources/prefs/icon.png
+ProcessGuardianPrefs_RESOURCE_FILES = Sources/prefs/Root.plist Sources/prefs/icon.png Sources/prefs/icon@2x.png Sources/prefs/icon@3x.png
 ProcessGuardianPrefs_INSTALL_PATH = /Library/PreferenceBundles
 # PSPrefCell / PSListController 等符号只存在于 Preferences.app 内，编译期拿不到
 # 对应库，必须让链接器放过它们，运行时再由进程自身解析。

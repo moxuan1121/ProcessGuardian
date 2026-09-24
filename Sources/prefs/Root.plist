@@ -10,7 +10,7 @@
 			<key>label</key>
 			<string>生效设置</string>
 			<key>footerText</key>
-			<string>关闭后守护进程会挂起，并把所有已接管进程的内核设置恢复默认。</string>
+			<string>关闭后停止应用配置，并恢复已接管进程的优先级和内存限制。</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -44,58 +44,6 @@
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSTextFieldCell</string>
-			<key>label</key>
-			<string>全局检测周期</string>
-			<key>key</key>
-			<string>CheckInterval</string>
-			<key>placeholder</key>
-			<string>1800</string>
-			<key>keyboardType</key>
-			<integer>4</integer>
-			<key>Get</key>
-			<string>preferenceValueForSpecifier:</string>
-			<key>Set</key>
-			<string>setPreferenceValue:specifier:</string>
-			<key>footerText</key>
-			<string>写 0 或不写则默认 1800 秒。这是兜底巡检；切换前台会立刻触发一轮。</string>
-		</dict>
-
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string>进程列表</string>
-			<key>footerText</key>
-			<string>点击「进程列表」查看并编辑；点击「添加进程」新增。</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>label</key>
-			<string>进程列表</string>
-			<key>action</key>
-			<string>showProcessList</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>label</key>
-			<string>进程排序</string>
-			<key>action</key>
-			<string>sortProcessList</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>label</key>
-			<string>添加进程</string>
-			<key>action</key>
-			<string>addNewProcess</string>
-		</dict>
-
-		<dict>
-			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>日志配置</string>
@@ -126,7 +74,30 @@
 			<key>footerText</key>
 			<string>选择当日志达到多大时自动清空？</string>
 		</dict>
-
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>label</key>
+			<string>进程排序</string>
+			<key>action</key>
+			<string>sortProcessList</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>label</key>
+			<string>添加进程</string>
+			<key>action</key>
+			<string>addNewProcess</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>label</key>
+			<string>进程列表</string>
+			<key>action</key>
+			<string>showProcessList</string>
+		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
@@ -166,23 +137,6 @@
 			<string>恢复配置</string>
 			<key>action</key>
 			<string>restoreConfig</string>
-		</dict>
-
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string>关于</string>
-			<key>footerText</key>
-			<string>ProcessGuardian：设置进程优先级、内存和前台 CPU 上限，并可守护后台应用。</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>label</key>
-			<string>TG频道</string>
-			<key>action</key>
-			<string>openTGChat</string>
 		</dict>
 	</array>
 	<key>title</key>

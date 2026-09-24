@@ -33,7 +33,7 @@
  */
 @interface PSSpecifier : NSObject
 + (PSSpecifier *)emptySpecifier;
-@property (nonatomic, copy) NSString *property;
+@property (nonatomic, copy) NSString *key;
 @property (nonatomic, copy) NSString *identifier;
 @property (nonatomic, copy) NSString *label;
 @property (nonatomic, copy) NSString *footerText;

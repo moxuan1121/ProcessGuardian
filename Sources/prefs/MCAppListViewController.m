@@ -125,7 +125,8 @@
     if (identifier.length == 0) return;
     void (^block)(NSString *) = self.onPick;
     /* 先出栈再回调：回调里会 push 编辑器，两边同时操作导航栈会被 UIKit 丢掉一次。 */
-    [self.navigationController popViewControllerAnimated:NO];
+    if (self.navigationController.viewControllers.count > 1)
+        [self.navigationController popViewControllerAnimated:NO];
     if (block) block(identifier);
 }
 
