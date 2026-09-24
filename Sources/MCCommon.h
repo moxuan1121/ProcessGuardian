@@ -16,7 +16,7 @@ extern NSString *const MCStatusFileName;
 /** 守护进程日志文件名，位于 MobileSupport 或 jbroot 下的 Library/Logs。 */
 extern NSString *const MCLogFileName;
 
-extern const NSInteger MCDefaultCheckInterval;   /* 1800 秒 */
+extern const NSInteger MCSweepInterval;   /* 固定 1800 秒兜底巡检 */
 extern const double  MCDefaultLogSizeLimitMB;   /* 2 MB  */
 
 @interface MCProcessConfig : NSObject <NSCopying>

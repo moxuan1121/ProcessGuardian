@@ -26,11 +26,7 @@ static NSString *const kTGChatURL   = @"https://t.me/iosdumpzzz";
 - (id)preferenceValueForSpecifier:(PSSpecifier *)specifier {
     NSString *key = specifier.key;
     if (!key.length) return [super preferenceValueForSpecifier:specifier];
-    id v = [MCPrefs readPrefs][key];
-    /* 开关类取值必须回成 NSNumber，否则 PSSwitchCell 会拿 nil 当 0 又写回一次。 */
-    if ([specifier.cellClass isSubclassOfClass:NSClassFromString(@"PSSwitchCell")])
-        return v ? @([v boolValue]) : @NO;
-    return v ?: @"";
+    return @([[MCPrefs readPrefs][key] boolValue]);
 }
 
 - (void)setPreferenceValue:(id)value specifier:(PSSpecifier *)specifier {

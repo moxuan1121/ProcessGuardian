@@ -6,10 +6,10 @@
  * 特权 API 只需要授予一个带 entitlement 的二进制，而不是每个被注入的进程。
  *
  * 运行结构：
- *   启动 -> 生成默认预设 -> 自我保护 -> 全量应用 -> 1800s 周期巡检
+ *   启动 -> 初始化配置 -> 自我保护 -> 全量应用 -> 1800s 兜底巡检
  *   Darwin 通知 -> debounce 队列（合并抖动）-> worker 队列（实际应用）
  *
- * 所有实际应用都汇聚到串行的 worker 队列，因此 sApplied / sLastApply 不需要
+ * 所有实际应用都汇聚到串行的 worker 队列，因此 sApplied 不需要
  * 额外加锁也不会被并发访问。
  */
 #import <Foundation/Foundation.h>
@@ -22,10 +22,8 @@
 #import <fcntl.h>
 #import <unistd.h>
 #import <pwd.h>
-#import <dlfcn.h>
 #import <errno.h>
 #import <string.h>
-#import <mach/mach.h>
 
 #import "../MCCommon.h"
 
@@ -126,16 +124,21 @@ static BOOL MCReadKernelPriority(pid_t pid, int32_t *priority) {
 static void MCRestoreProcess(MCProcessConfig *cfg, pid_t pid) {
     MCLog(@"[恢复] 目标: %@ PID: %d", cfg.key, pid);
 
-    memorystatus_memlimit_properties_t ml = {
-        .memlimit_active   = MC_MEMLIMIT_DEFAULT,
-        .memlimit_inactive = MC_MEMLIMIT_DEFAULT,
-    };
-    memorystatus_control(MEMORYSTATUS_CMD_SET_MEMLIMIT_PROPERTIES, pid, 0, &ml, sizeof(ml));
-
-    memorystatus_priority_properties_t pp = {0};
-    memorystatus_control(MEMORYSTATUS_CMD_SET_PRIORITY_PROPERTIES, pid, 0, &pp, sizeof(pp));
-    memorystatus_control(MEMORYSTATUS_CMD_ELEVATED_INACTIVEJETSAMPRIORITY_DISABLE, pid, 0, NULL, 0);
-    memorystatus_control(MEMORYSTATUS_CMD_SET_PROCESS_IS_FREEZABLE, pid, 1, NULL, 0);
+    if (cfg.memLimitActive || cfg.memLimitInactive) {
+        memorystatus_memlimit_properties_t ml = {
+            .memlimit_active = MC_MEMLIMIT_DEFAULT,
+            .memlimit_inactive = MC_MEMLIMIT_DEFAULT,
+        };
+        memorystatus_control(MEMORYSTATUS_CMD_SET_MEMLIMIT_PROPERTIES, pid, 0, &ml, sizeof(ml));
+    }
+    if (cfg.jetsamPriority != -1) {
+        memorystatus_priority_properties_t pp = {0};
+        memorystatus_control(MEMORYSTATUS_CMD_SET_PRIORITY_PROPERTIES, pid, 0, &pp, sizeof(pp));
+        if (cfg.jetsamPriority > 0) {
+            memorystatus_control(MEMORYSTATUS_CMD_ELEVATED_INACTIVEJETSAMPRIORITY_DISABLE, pid, 0, NULL, 0);
+            memorystatus_control(MEMORYSTATUS_CMD_SET_PROCESS_IS_FREEZABLE, pid, 1, NULL, 0);
+        }
+    }
 
     if (cfg.niceValue != 0) setpriority(PRIO_PROCESS, pid, 0);
     MCLog(@"[内核] ：已被系统恢复");
@@ -417,13 +420,13 @@ int main(int argc, const char *argv[]) {
         /* 1800s 兜底巡检：即使没有前台切换事件，被系统悄悄覆写的设置也会被拉回来。 */
         dispatch_source_t sweep = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, sWorkerQueue);
         dispatch_source_set_timer(sweep, dispatch_time(DISPATCH_TIME_NOW,
-                                                       (int64_t)MCDefaultCheckInterval * NSEC_PER_SEC),
-                                  (uint64_t)MCDefaultCheckInterval * NSEC_PER_SEC, 60 * NSEC_PER_SEC);
+                                                       (int64_t)MCSweepInterval * NSEC_PER_SEC),
+                                  (uint64_t)MCSweepInterval * NSEC_PER_SEC, 60 * NSEC_PER_SEC);
         dispatch_source_set_event_handler(sweep, ^{
             MCRefreshRuntimeLimits();
-            MCLog(@"[守护] 开始执行 %ds", (int)MCDefaultCheckInterval);
+            MCLog(@"[守护] 开始执行 %ds", (int)MCSweepInterval);
             MCRunSweep(YES);
-            MCLog(@"[全局守护] %ds 周期巡检完成。", (int)MCDefaultCheckInterval);
+            MCLog(@"[全局守护] %ds 周期巡检完成。", (int)MCSweepInterval);
         });
         dispatch_resume(sweep);
 

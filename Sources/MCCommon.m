@@ -10,7 +10,7 @@ NSString *const MCApplyLimitsNotification = @"com.moxuan.processguardian/ApplyLi
 NSString *const MCStatusFileName          = @"com.moxuan.processguardian.status.plist";
 NSString *const MCLogFileName             = @"ProcessGuardian.log";
 
-const NSInteger MCDefaultCheckInterval = 1800;
+const NSInteger MCSweepInterval = 1800;
 const double    MCDefaultLogSizeLimitMB = 2.0;
 
 /* ---------------------------------------------------------------- 配置模型 */
