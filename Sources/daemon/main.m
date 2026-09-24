@@ -22,6 +22,7 @@
 #import <fcntl.h>
 #import <unistd.h>
 #import <pwd.h>
+#import <dlfcn.h>
 #import <errno.h>
 #import <string.h>
 #import <mach/mach.h>
@@ -296,7 +297,8 @@ static void MCApplyDirtyTrack(MCProcessConfig *cfg, pid_t pid) {
     if (!cfg.dirtyTrackStrongLock) return;
 
     int state = 0;
-    if (proc_dirty_details(pid, &state) != 0) {
+    int (*details)(pid_t, int *) = dlsym(RTLD_DEFAULT, "proc_dirty_details");
+    if (!details || details(pid, &state) != 0) {
         MCLog(@"[脏数据强锁] 阻止 Idle Exit -> [内核:失败] err:%d", errno);
         return;
     }
