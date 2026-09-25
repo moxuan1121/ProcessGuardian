@@ -35,8 +35,7 @@ typedef NS_ENUM(NSInteger, MCListSortMode) {
 /** 选择要纳管的对象（已安装 App / 正在运行的进程，搜索两组）。 */
 @interface MCAppListViewController : UIViewController <UITableViewDataSource,
                                                        UITableViewDelegate,
-                                                       UISearchResultsUpdating,
-                                                       UISearchControllerDelegate>
+                                                       UISearchBarDelegate>
 /** 选中一条后回调，参数是包名或进程名。 */
 @property (nonatomic, copy) void (^onPick)(NSString *identifier);
 @end

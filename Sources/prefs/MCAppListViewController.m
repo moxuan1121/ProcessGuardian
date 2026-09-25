@@ -8,7 +8,7 @@
 @interface MCAppListViewController ()
 @property (nonatomic, strong) UITableView *table;
 @property (nonatomic, strong) UISegmentedControl *sourceControl;
-@property (nonatomic, strong) UISearchController *search;
+@property (nonatomic, strong) UISearchBar *search;
 
 @property (nonatomic, strong) NSArray<NSString *> *appIds;        /* 包名，与下面按下标对齐 */
 @property (nonatomic, strong) NSArray<NSString *> *appNames;
@@ -39,21 +39,24 @@
     [self.table registerClass:[MCAppProcessCell class] forCellReuseIdentifier:@"MCAppProcessCell"];
     self.table.translatesAutoresizingMaskIntoConstraints = NO;
 
-    self.search = [[UISearchController alloc] initWithSearchResultsController:nil];
-    self.search.searchResultsUpdater = self;
+    self.search = [UISearchBar new];
     self.search.delegate = self;
-    self.search.searchBar.placeholder = @"搜索应用名称、包名或系统进程";
-    self.navigationItem.searchController = self.search;
-    self.navigationItem.hidesSearchBarWhenScrolling = NO;
-    self.definesPresentationContext = YES;
+    self.search.placeholder = @"搜索应用名称、包名或系统进程";
+    self.search.searchBarStyle = UISearchBarStyleMinimal;
 
-    UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 0, 54)];
+    UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 0, 110)];
+    self.search.translatesAutoresizingMaskIntoConstraints = NO;
     self.sourceControl.translatesAutoresizingMaskIntoConstraints = NO;
+    [header addSubview:self.search];
     [header addSubview:self.sourceControl];
     [NSLayoutConstraint activateConstraints:@[
+        [self.search.leadingAnchor constraintEqualToAnchor:header.leadingAnchor constant:8],
+        [self.search.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-8],
+        [self.search.topAnchor constraintEqualToAnchor:header.topAnchor constant:4],
+        [self.search.heightAnchor constraintEqualToConstant:48],
         [self.sourceControl.leadingAnchor constraintEqualToAnchor:header.leadingAnchor constant:16],
         [self.sourceControl.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-16],
-        [self.sourceControl.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
+        [self.sourceControl.topAnchor constraintEqualToAnchor:self.search.bottomAnchor constant:8],
     ]];
     self.table.tableHeaderView = header;
 
@@ -79,7 +82,7 @@
 - (BOOL)showingProcesses { return self.sourceControl.selectedSegmentIndex == 1; }
 
 - (void)applyFilter {
-    NSString *q = [[self.search.searchBar.text stringByTrimmingCharactersInSet:
+    NSString *q = [[self.search.text stringByTrimmingCharactersInSet:
         [NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
     self.sourceControl.enabled = !q.length;
     if (!q.length) {
@@ -122,11 +125,9 @@
 - (void)pick:(NSString *)identifier {
     if (identifier.length == 0) return;
     void (^block)(NSString *) = self.onPick;
-    [self.view endEditing:YES];
-    self.search.active = NO;
-    /* 先出栈再回调：回调里会 push 编辑器，两边同时操作导航栈会被 UIKit 丢掉一次。 */
+    [self.search resignFirstResponder];
     if (self.navigationController.viewControllers.count > 1)
-        [self.navigationController popViewControllerAnimated:NO];
+        [self.navigationController popViewControllerAnimated:YES];
     if (block) block(identifier);
 }
 
@@ -158,6 +159,6 @@
     [self pick:self.visibleSections[path.section][path.row]];
 }
 
-- (void)updateSearchResultsForSearchController:(UISearchController *)controller { [self applyFilter]; }
+- (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)searchText { [self applyFilter]; }
 
 @end

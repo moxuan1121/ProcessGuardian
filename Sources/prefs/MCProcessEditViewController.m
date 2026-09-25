@@ -269,10 +269,12 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
 
     if (row.kind == MCEditRowIdentifier) {
         UITableViewCell *c = [tv dequeueReusableCellWithIdentifier:@"identifier"];
-        if (!c) c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"identifier"];
+        if (!c) c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"identifier"];
         c.textLabel.text = row.title;
         c.detailTextLabel.text = self.targetIdentifier.length ? self.targetIdentifier : @"选择";
-        c.detailTextLabel.numberOfLines = 2;
+        c.detailTextLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
+        c.detailTextLabel.adjustsFontSizeToFitWidth = YES;
+        c.detailTextLabel.minimumScaleFactor = 0.8;
         c.detailTextLabel.textColor = [UIColor labelColor];
         c.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         return c;
