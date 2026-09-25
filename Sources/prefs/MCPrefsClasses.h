@@ -20,7 +20,7 @@ typedef NS_ENUM(NSInteger, MCListSortMode) {
     MCListSortByJetsam = 2,
 };
 
-/** 进程行：备注为主标题，运行状态/生效摘要为副标题。三个列表页共用，复用标识为 @"MCAppProcessCell"。 */
+/** 候选列表行：名称、包名或进程状态。 */
 @interface MCAppProcessCell : UITableViewCell
 - (void)configureWithTitle:(NSString *)title subtitle:(NSString *)subtitle running:(BOOL)running;
 @end
@@ -32,15 +32,13 @@ typedef NS_ENUM(NSInteger, MCListSortMode) {
 @interface ProcessGuardianPrefsListController : PSListController
 @end
 
-/** 选择要纳管的对象（已安装 App / 正在运行的进程）。 */
+/** 选择要纳管的对象（已安装 App / 正在运行的进程，搜索两组）。 */
 @interface MCAppListViewController : UIViewController <UITableViewDataSource,
                                                        UITableViewDelegate,
                                                        UISearchResultsUpdating,
                                                        UISearchControllerDelegate>
 /** 选中一条后回调，参数是包名或进程名。 */
 @property (nonatomic, copy) void (^onPick)(NSString *identifier);
-/** 选「应用程序」还是「运行中的进程」。 */
-@property (nonatomic, assign) BOOL pickProcesses;
 @end
 
 /** 单条配置的编辑器。 */

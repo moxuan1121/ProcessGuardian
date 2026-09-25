@@ -16,6 +16,7 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     MCEditRowNumber,   /* 数字（限额 / CPU） */
     MCEditRowSwitch,   /* 开关 */
     MCEditRowOption,   /* 底部菜单选择 */
+    MCEditRowIdentifier, /* 进入候选列表选择 */
 };
 
 @interface MCEditRow : NSObject
@@ -173,7 +174,7 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     NSMutableArray *identity = [NSMutableArray array], *limits = [NSMutableArray array],
                    *switches = [NSMutableArray array];
 
-    [identity addObject:[MCEditRow rowWithKind:MCEditRowText title:@"目标进程名 / 包名"
+    [identity addObject:[MCEditRow rowWithKind:MCEditRowIdentifier title:@"目标进程名 / 包名"
                      footer:@"通过包名或进程名识别进程" key:@"__identifier"]];
     [identity addObject:[MCEditRow rowWithKind:MCEditRowText title:@"备注 (主页显示名称)"
                      footer:nil key:@"Remark"]];
@@ -183,11 +184,11 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
                      key:@"MemLimitActive"]];
     [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"后台内存限制 (MB)"
                      footer:@"同上，作用于进程处于后台时" key:@"MemLimitInactive"]];
-    [limits addObject:[MCEditRow rowWithKind:MCEditRowOption title:@"进程优先级 (Nice)"
-                     footer:@"-20 最高优先 到 19 最低优先，默认 0" key:@"NiceValue"]];
     [limits addObject:[MCEditRow rowWithKind:MCEditRowOption title:@"内存优先级(JETSAM)"
                      footer:@"-1 让插件不要设置；0 重新让系统接管；其余为系统内存优先级。配置使用统一档位；iOS 15 自动换算，例如 150 对应内核值 15。列表当前状态显示内核原始值。"
                      key:@"JetsamPriority"]];
+    [limits addObject:[MCEditRow rowWithKind:MCEditRowOption title:@"进程优先级 (Nice)"
+                     footer:@"-20 最高优先 到 19 最低优先，默认 0" key:@"NiceValue"]];
     [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"前台 CPU 上限 (%)"
                      footer:@"0 关闭；2～1000 为 CPU 百分比阈值。100% 约为单个核心满载"
                      key:@"CPUThreshold"]];
@@ -226,11 +227,6 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
 /* ------------------------------------------------------------------ 暂存编辑 */
 
 - (void)commitTextForRow:(MCEditRow *)row text:(NSString *)text {
-    if ([row.key isEqualToString:@"__identifier"]) {
-        self.targetIdentifier = text;
-        self.title = self.creating ? @"添加进程" : @"编辑进程";
-        return;
-    }
     if ([row.key isEqualToString:@"Remark"]) { self.config[row.key] = text ?: @""; return; }
 
     NSScanner *scanner = [NSScanner scannerWithString:text ?: @""];
@@ -271,26 +267,26 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
         return c;
     }
 
+    if (row.kind == MCEditRowIdentifier) {
+        UITableViewCell *c = [tv dequeueReusableCellWithIdentifier:@"identifier"];
+        if (!c) c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"identifier"];
+        c.textLabel.text = row.title;
+        c.detailTextLabel.text = self.targetIdentifier.length ? self.targetIdentifier : @"选择";
+        c.detailTextLabel.numberOfLines = 2;
+        c.detailTextLabel.textColor = [UIColor labelColor];
+        c.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        return c;
+    }
+
     if (row.kind == MCEditRowText || row.kind == MCEditRowNumber) {
         MCFieldCell *c = [tv dequeueReusableCellWithIdentifier:@"field" forIndexPath:path];
         c.textLabel.text = row.title;
-        id value = [row.key isEqualToString:@"__identifier"] ? ws.targetIdentifier : ws.config[row.key];
+        id value = ws.config[row.key];
         c.field.text = value ? [NSString stringWithFormat:@"%@", value] : @"";
         c.field.placeholder = row.title;
         /* 内存限额可能是 -1，保留可输入负号的键盘。 */
         c.field.keyboardType = row.kind == MCEditRowNumber ? UIKeyboardTypeNumbersAndPunctuation
                                                           : UIKeyboardTypeDefault;
-        if ([row.key isEqualToString:@"__identifier"] && self.creating) {
-            UIButton *choose = [UIButton buttonWithType:UIButtonTypeSystem];
-            [choose setTitle:@"选择" forState:UIControlStateNormal];
-            choose.frame = CGRectMake(0, 0, 42, 30);
-            [choose addTarget:self action:@selector(chooseIdentifier)
-                forControlEvents:UIControlEventTouchUpInside];
-            c.field.rightView = choose;
-            c.field.rightViewMode = UITextFieldViewModeAlways;
-        } else {
-            c.field.rightView = nil;
-        }
         c.onCommit = ^(NSString *text) { [ws commitTextForRow:row text:text]; };
         return c;
     }
@@ -298,10 +294,12 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     UITableViewCell *c = [tv dequeueReusableCellWithIdentifier:@"plain"];
     if (!c) c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"plain"];
     c.textLabel.text = row.title;
+    c.textLabel.textColor = [UIColor labelColor];
     c.textLabel.numberOfLines = 0;
     if (row.kind == MCEditRowOption) {
         c.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         c.detailTextLabel.text = [NSString stringWithFormat:@"%ld", (long)[self.config[row.key] integerValue]];
+        c.detailTextLabel.textColor = [UIColor labelColor];
     }
     return c;
 }
@@ -339,6 +337,11 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     [tv deselectRowAtIndexPath:path animated:YES];
     MCEditRow *row = self.sections[path.section][path.row];
 
+    if (row.kind == MCEditRowIdentifier) {
+        [self.view endEditing:YES];
+        [self chooseIdentifier];
+        return;
+    }
     if (row.kind != MCEditRowOption) return;
 
     BOOL nice = [row.key isEqualToString:@"NiceValue"];

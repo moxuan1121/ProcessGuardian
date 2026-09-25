@@ -99,16 +99,6 @@ NSArray<NSString *> *MCPriorityNames(void) {
 }
 
 + (NSArray<NSString *> *)runningProcessNames {
-    NSMutableSet<NSString *> *appExecutables = [NSMutableSet set];
-    Class workspace = objc_getClass("LSApplicationWorkspace");
-    id shared = workspace ? ((id (*)(id, SEL))objc_msgSend)(workspace, sel_registerName("defaultWorkspace")) : nil;
-    @try {
-        NSArray *apps = shared ? ((id (*)(id, SEL))objc_msgSend)(shared, sel_registerName("allApplications")) : @[];
-        for (id app in apps) {
-            NSString *exe = ((id (*)(id, SEL))objc_msgSend)(app, sel_registerName("bundleExecutable"));
-            if ([exe isKindOfClass:[NSString class]] && exe.length) [appExecutables addObject:exe];
-        }
-    } @catch (NSException *e) { /* 仍可按 .app 路径过滤 */ }
     size_t size = 0;
     int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0 };
     if (sysctl(mib, 4, NULL, &size, NULL, 0) < 0) return @[];
@@ -119,14 +109,7 @@ NSArray<NSString *> *MCPriorityNames(void) {
             int n = (int)(size / sizeof(struct kinfo_proc));
             for (int i = 0; i < n; i++) {
                 NSString *name = @(procs[i].kp_proc.p_comm);
-                BOOL appExecutable = NO;
-                for (NSString *exe in appExecutables)
-                    if ([exe hasPrefix:name] && (name.length == exe.length || name.length == 15)) {
-                        appExecutable = YES;
-                        break;
-                    }
-                if (name.length && !appExecutable && !MCBundleIdForPid(procs[i].kp_proc.p_pid)
-                    && ![names containsObject:name]) [names addObject:name];
+                if (name.length && ![names containsObject:name]) [names addObject:name];
             }
         }
         free(procs);

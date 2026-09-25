@@ -1,8 +1,7 @@
 /**
  * MCAppListViewController.m —— 选择要纳管的对象。
  *
- * 两条来源分开列，因为它们的匹配方式不同：已安装 App 用包名匹配（重装后依然有效），
- * 系统守护进程只能用进程名（它们根本没有 bundle id）。
+ * 应用程序按包名列出，进程按系统枚举的名称列出；搜索同时覆盖两组。
  */
 #import "MCPrefsClasses.h"
 
@@ -15,14 +14,15 @@
 @property (nonatomic, strong) NSArray<NSString *> *appNames;
 @property (nonatomic, strong) NSArray<NSString *> *processNames;
 
-@property (nonatomic, copy) NSArray<NSString *> *visible;
+@property (nonatomic, copy) NSArray<NSArray<NSString *> *> *visibleSections;
+@property (nonatomic, copy) NSArray<NSString *> *visibleTitles;
 @end
 
 @implementation MCAppListViewController
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"选择应用";
+    self.title = @"选择进程";
 
     [self loadData];
 
@@ -31,10 +31,9 @@
     [self.sourceControl addTarget:self action:@selector(sourceChanged:)
                  forControlEvents:UIControlEventValueChanged];
 
-    /* 分段控件占标题位：这一页只有两个数据源，不值得为它单独留一行高度。 */
-    self.navigationItem.titleView = self.sourceControl;
+    self.navigationItem.title = @"选择进程";
 
-    self.table = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];
+    self.table = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
     self.table.dataSource = self;
     self.table.delegate = self;
     [self.table registerClass:[MCAppProcessCell class] forCellReuseIdentifier:@"MCAppProcessCell"];
@@ -43,17 +42,20 @@
     self.search = [[UISearchController alloc] initWithSearchResultsController:nil];
     self.search.searchResultsUpdater = self;
     self.search.delegate = self;
-    self.search.searchBar.placeholder = @"搜索名称或包名";
-    self.table.tableHeaderView = self.search.searchBar;
+    self.search.searchBar.placeholder = @"搜索应用名称、包名或系统进程";
+    self.navigationItem.searchController = self.search;
+    self.navigationItem.hidesSearchBarWhenScrolling = NO;
+    self.definesPresentationContext = YES;
 
-    UIView *tip = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 0, 34)];
-    UILabel *label = [UILabel new];
-    label.frame = CGRectMake(16, 8, [UIScreen mainScreen].bounds.size.width - 32, 20);
-    label.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption2];
-    label.textColor = [UIColor secondaryLabelColor];
-    label.text = @"选择添加的进程类型：应用程序按包名识别，系统进程按进程名识别。";
-    [tip addSubview:label];
-    self.table.tableFooterView = tip;
+    UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 0, 54)];
+    self.sourceControl.translatesAutoresizingMaskIntoConstraints = NO;
+    [header addSubview:self.sourceControl];
+    [NSLayoutConstraint activateConstraints:@[
+        [self.sourceControl.leadingAnchor constraintEqualToAnchor:header.leadingAnchor constant:16],
+        [self.sourceControl.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-16],
+        [self.sourceControl.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
+    ]];
+    self.table.tableHeaderView = header;
 
     self.table.frame = self.view.bounds;
     self.table.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -76,31 +78,27 @@
 
 - (BOOL)showingProcesses { return self.sourceControl.selectedSegmentIndex == 1; }
 
-- (NSArray<NSString *> *)currentSource { return [self showingProcesses] ? self.processNames : self.appIds; }
-
-- (NSString *)displayNameForIndex:(NSUInteger)i {
-    if ([self showingProcesses]) return self.processNames[i];
-    return self.appNames[i];
-}
-
 - (void)applyFilter {
-    NSString *q = self.search.searchBar.text.lowercaseString;
-    NSArray *source = [self currentSource];
-    if (!q.length) { self.visible = source; [self.table reloadData]; return; }
-
-    NSMutableArray *out = [NSMutableArray array];
-    for (NSUInteger i = 0; i < source.count; i++) {
-        NSString *idv = source[i];
-        NSString *name = [self displayNameForIndex:i];
-        if ([idv.lowercaseString containsString:q] || [name.lowercaseString containsString:q])
-            [out addObject:idv];
+    NSString *q = [[self.search.searchBar.text stringByTrimmingCharactersInSet:
+        [NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
+    self.sourceControl.enabled = !q.length;
+    if (!q.length) {
+        self.visibleSections = @[ [self showingProcesses] ? self.processNames : self.appIds ];
+        self.visibleTitles = @[ [self showingProcesses] ? @"系统进程" : @"应用程序" ];
+    } else {
+        NSMutableArray<NSString *> *apps = [NSMutableArray array], *processes = [NSMutableArray array];
+        for (NSUInteger i = 0; i < self.appIds.count; i++)
+            if ([self.appIds[i].lowercaseString containsString:q] ||
+                [self.appNames[i].lowercaseString containsString:q]) [apps addObject:self.appIds[i]];
+        for (NSString *name in self.processNames)
+            if ([name.lowercaseString containsString:q]) [processes addObject:name];
+        self.visibleSections = @[ apps, processes ];
+        self.visibleTitles = @[ @"应用程序", @"系统进程" ];
     }
-    self.visible = out;
     [self.table reloadData];
 }
 
 - (void)sourceChanged:(UISegmentedControl *)sender {
-    self.title = sender.selectedSegmentIndex == 1 ? @"选择进程" : @"选择应用";
     [self applyFilter];
 }
 
@@ -132,21 +130,32 @@
     if (block) block(identifier);
 }
 
-- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return self.visible.count; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return self.visibleSections.count; }
+
+- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
+    return self.visibleSections[s].count;
+}
+
+- (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
+    return self.visibleTitles[s];
+}
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)path {
     MCAppProcessCell *c = [tv dequeueReusableCellWithIdentifier:@"MCAppProcessCell" forIndexPath:path];
-    NSString *identifier = self.visible[path.row];
-    NSUInteger src = [[self currentSource] indexOfObject:identifier];
-    NSString *name = (src == NSNotFound) ? identifier : [self displayNameForIndex:src];
-    BOOL running = MCPidsForIdentifier(identifier).count > 0;
-    [c configureWithTitle:name subtitle:identifier running:running];
+    NSString *identifier = self.visibleSections[path.section][path.row];
+    BOOL process = [self.visibleTitles[path.section] isEqualToString:@"系统进程"];
+    NSUInteger src = [self.appIds indexOfObject:identifier];
+    NSString *name = process || src == NSNotFound ? identifier : self.appNames[src];
+    BOOL running = process || MCPidsForIdentifier(identifier).count > 0;
+    NSString *subtitle = process ? (running ? @"系统进程 · 运行中" : @"系统进程 · 未运行")
+        : [NSString stringWithFormat:@"%@ · %@", identifier, running ? @"运行中" : @"未运行"];
+    [c configureWithTitle:name subtitle:subtitle running:running];
     return c;
 }
 
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)path {
     [tv deselectRowAtIndexPath:path animated:YES];
-    [self pick:self.visible[path.row]];
+    [self pick:self.visibleSections[path.section][path.row]];
 }
 
 - (void)updateSearchResultsForSearchController:(UISearchController *)controller { [self applyFilter]; }

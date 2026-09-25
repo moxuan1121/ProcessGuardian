@@ -1,9 +1,7 @@
 /**
  * MCAppProcessCell.m —— 面板里复用的进程行。
  *
- * 不用 UITableViewCell 自带的 textLabel/detailTextLabel 布局，自己放两个 label：
- * 副标题要按「进程在不在运行」换色，而 detailTextLabel 的字体颜色只能整体跟随
- * cell 的 tintColor，做不到逐行区分。
+ * 候选列表的名称和标识分两行显示，保留系统分组列表的点按反馈。
  */
 #import "MCPrefsClasses.h"
 
@@ -19,7 +17,7 @@
     self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
     if (self) {
         _titleLabel = [UILabel new];
-        _titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+        _titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
         _subtitleLabel = [UILabel new];
         _subtitleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
         _subtitleLabel.textColor = [UIColor secondaryLabelColor];
@@ -39,6 +37,7 @@
             [_subtitleLabel.topAnchor constraintEqualToAnchor:_titleLabel.bottomAnchor constant:2],
             [_subtitleLabel.bottomAnchor constraintEqualToAnchor:self.contentView.bottomAnchor constant:-8],
         ]];
+        self.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         self.selectionStyle = UITableViewCellSelectionStyleDefault;
     }
     return self;
@@ -47,9 +46,9 @@
 - (void)configureWithTitle:(NSString *)title subtitle:(NSString *)subtitle running:(BOOL)running {
     self.titleLabel.text = title.length ? title : @"(未命名)";
     self.subtitleLabel.text = subtitle;
+    self.titleLabel.textColor = [UIColor labelColor];
     self.subtitleLabel.textColor = running ? [UIColor secondaryLabelColor]
                                            : [UIColor tertiaryLabelColor];
-    self.alpha = running ? 1.0 : 0.6;
 }
 
 - (void)prepareForReuse {
