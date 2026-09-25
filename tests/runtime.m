@@ -84,7 +84,8 @@ int main(void) {
     MCRunSweep(NO);
     assert(enumerations == 1 && priorityWrites == 1 && sApplied.count == 1);
     NSDictionary *shown = [MCCommon readStatus][@"Processes"][@"com.example.app"];
-    assert([shown[@"JetsamState"] isEqual:@"已生效"] && [shown[@"ActualJetsam"] intValue] == 150);
+    assert([shown[@"JetsamState"] isEqual:@"已生效"] &&
+           [shown[@"ActualJetsam"] intValue] == MCTargetJetsamPriority(150));
     MCRunSweep(NO);
     assert(enumerations == 2 && priorityWrites == 1); // Unchanged target is not rewritten.
     assert(([@{@"Enabled": @YES, @"AppConfigs": @{@"com.example.app": @{@"JetsamPriority": @-1}}}
