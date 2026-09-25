@@ -6,6 +6,7 @@
 #import "SALiteStayAliveManager.h"
 #import "SALiteConfig.h"
 #import "SALitePrivateAPI.h"
+#import "../MCCommon.h"
 
 #import <objc/message.h>
 #import <objc/runtime.h>
@@ -46,7 +47,7 @@ static const NSInteger SALiteDefaultCrashWake = 60;                      // 崩�
 static void SALiteLog(NSString *message)
 {
     NSString *path = [SALiteConfig sharedPathForPath:@"/var/mobile/Library/Logs/ProcessGuardian.log"];
-    NSString *line = [NSString stringWithFormat:@"[%@] [后台守护] %@\n", [NSDate date], message];
+    NSString *line = [NSString stringWithFormat:@"[%@] [后台守护] %@\n", [MCCommon timestampString], message];
     int fd = open(path.fileSystemRepresentation, O_WRONLY | O_CREAT | O_APPEND, 0666);
     if (fd >= 0) {
         const char *bytes = line.UTF8String;
@@ -451,12 +452,22 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
     SALiteKVC(application, @"processState");
 
     int pid = [SALiteKVC(application, @"pid") intValue];
-    // SpringBoard can retain a dead PID until another UI event refreshes its cache.
-    if (pid > 0 && kill(pid, 0) == -1 && errno == ESRCH) return 0;
+    // SpringBoard's cached PID may be zero or dead until another app opens.
+    BOOL alive = pid > 0 && !(kill(pid, 0) == -1 && errno == ESRCH);
     struct vdt_proc_bsdinfo info = {0};
-    if (pid > 0 && proc_pidinfo(pid, VDT_PROC_PIDTBSDINFO, 0, &info, sizeof(info)) == sizeof(info)
-        && info.pbi_status == 5) return 0; // Darwin SZOMB
-    return pid < 0 ? 0 : pid;
+    if (alive && proc_pidinfo(pid, VDT_PROC_PIDTBSDINFO, 0, &info, sizeof(info)) == sizeof(info)
+        && info.pbi_status == 5) alive = NO; // Darwin SZOMB
+    if (alive) {
+        NSString *actualBundle = MCBundleIdForPid(pid);
+        if (!actualBundle || [actualBundle isEqualToString:bundleIdentifier]) return pid;
+    }
+    // The process table is authoritative even before SpringBoard refreshes SBApplication.
+    for (NSNumber *candidate in MCPidsForIdentifier(bundleIdentifier)) {
+        pid_t current = candidate.intValue;
+        if (proc_pidinfo(current, VDT_PROC_PIDTBSDINFO, 0, &info, sizeof(info)) == sizeof(info)
+            && info.pbi_status != 5) return current;
+    }
+    return 0;
 }
 
 - (BOOL)isForegroundBundleIdentifier:(NSString *)bundleIdentifier
@@ -665,6 +676,13 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
     }
     SALiteLog([NSString stringWithFormat:@"监听 %@ PID:%d proc:%@ RBS:%@", bundleIdentifier, pid,
                source ? @"是" : @"否", identifier && connection ? @"是" : @"否"]);
+    // Close the gap between discovering the PID and registering both exit observers.
+    struct vdt_proc_bsdinfo info = {0};
+    if ((kill(pid, 0) == -1 && errno == ESRCH)
+        || (proc_pidinfo(pid, VDT_PROC_PIDTBSDINFO, 0, &info, sizeof(info)) == sizeof(info)
+            && info.pbi_status == 5)) {
+        [self processDidExitBundleIdentifier:bundleIdentifier pid:pid];
+    }
 }
 
 - (void)processDidExitBundleIdentifier:(NSString *)bundleIdentifier pid:(pid_t)pid
