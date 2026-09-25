@@ -557,7 +557,6 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
 - (void)ensureAssertionForBundleIdentifier:(NSString *)bundleIdentifier pid:(pid_t)pid
 {
     [self subscribeToDeathForBundleIdentifier:bundleIdentifier pid:pid];
-    SALiteLoadAssertionFrameworks();
 
     NSNumber *currentPID = self.assertionPIDs[bundleIdentifier];
     id assertion = self.assertions[bundleIdentifier];
@@ -614,6 +613,7 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
 
 - (void)subscribeToDeathForBundleIdentifier:(NSString *)bundleIdentifier pid:(pid_t)pid
 {
+    SALiteLoadAssertionFrameworks();
     NSNumber *key = @(pid);
     if ([self.watchedPIDs containsObject:key]) return;
 
