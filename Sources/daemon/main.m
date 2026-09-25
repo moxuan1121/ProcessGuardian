@@ -80,6 +80,7 @@ static void MCLog(NSString *format, ...) {
  */
 static NSMutableDictionary<NSString *, NSDictionary *> *sApplied;
 static BOOL MCReadKernelPriority(pid_t pid, int32_t *priority);
+static void MCUpdateCPUTimer(void);
 
 static void MCForgetKey(NSString *key) {
     [sApplied removeObjectForKey:key];
@@ -316,6 +317,7 @@ static void MCRunSweep(BOOL force) {
         for (NSString *key in configs) cpuConfigs[key] = [configs[key] dictionaryValue];
         MCCPUGuardUpdate(cpuConfigs, pidSnapshot, YES, ^(NSString *message) { MCLog(@"%@", message); });
     }
+    MCUpdateCPUTimer();
 
     if (!enabled) {
         for (NSString *key in [sApplied allKeys]) {
@@ -390,6 +392,15 @@ static dispatch_source_t sDebounceTimer; /* 合并短时间内重复的前台切
 static dispatch_source_t sLaunchdForkSource;
 static dispatch_source_t sTerminationSource;
 static BOOL sSweepPending;
+static dispatch_source_t sCPUTimer;
+
+static void MCUpdateCPUTimer(void) {
+    if (!sCPUTimer) return;
+    BOOL active = MCCPUGuardHasTargets();
+    dispatch_source_set_timer(sCPUTimer,
+        active ? dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC) : DISPATCH_TIME_FOREVER,
+        active ? NSEC_PER_SEC : DISPATCH_TIME_FOREVER, NSEC_PER_MSEC * 100);
+}
 
 static void MCScheduleSweepAfter(void) {
     if (sSweepPending) return;
@@ -475,6 +486,15 @@ int main(int argc, const char *argv[]) {
         MCProtectDaemonItself();
 
         sWorkerQueue = dispatch_queue_create("com.moxuan.processguardian.worker", NULL);
+        sCPUTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, sWorkerQueue);
+        dispatch_source_set_event_handler(sCPUTimer, ^{
+            @autoreleasepool {
+                MCCPUGuardSample(^(NSString *message) { MCLog(@"%@", message); });
+                MCUpdateCPUTimer();
+            }
+        });
+        dispatch_resume(sCPUTimer);
+        MCUpdateCPUTimer();
         signal(SIGTERM, SIG_IGN);
         sTerminationSource = dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL, SIGTERM, 0, sWorkerQueue);
         dispatch_source_set_event_handler(sTerminationSource, ^{

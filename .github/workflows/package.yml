@@ -25,12 +25,11 @@ jobs:
           "$RUNNER_TEMP/runtime-test"
       - name: Select Xcode 15.4
         run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
-      - name: Test kernel-only CPU monitoring
-        # Exercise the actual CPU module with mocked process/kernel calls; no device is killed.
+      - name: Test sustained process-wide CPU monitoring
+        # Exercise the CPU module with mocked process counters; no device is killed.
         run: |
-          clang -fobjc-arc -fblocks -Wno-incomplete-implementation -ISources/libproc -framework Foundation tests/cpu_kernel.m -o "$RUNNER_TEMP/cpu-kernel-test"
-          "$RUNNER_TEMP/cpu-kernel-test"
-          ! grep -Eq 'SIGKILL|PGSample|DISPATCH_SOURCE_TYPE_TIMER|sExceeded|mach_timebase_info' Sources/MCCPUGuard.m
+          clang -fobjc-arc -fblocks -ISources/libproc -framework Foundation tests/cpu_sustained.m -o "$RUNNER_TEMP/cpu-sustained-test"
+          "$RUNNER_TEMP/cpu-sustained-test"
       - name: Install build tools
         run: brew install make dpkg ldid
       - name: Install Theos and iOS SDK
