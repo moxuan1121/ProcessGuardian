@@ -125,11 +125,9 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     __weak typeof(self) ws = self;
     picker.onPick = ^(NSString *identifier) {
         NSString *oldIdentifier = ws.targetIdentifier;
-        NSString *remark = ws.config[@"Remark"];
         ws.targetIdentifier = identifier;
-        NSString *appName = [MCPrefs installedApps][identifier];
-        if (appName.length && (!remark.length || [remark isEqualToString:oldIdentifier]))
-            ws.config[@"Remark"] = appName;
+        if (![identifier isEqualToString:oldIdentifier])
+            ws.config[@"Remark"] = [MCPrefs installedApps][identifier] ?: identifier;
         [ws.table reloadData];
     };
     [self.navigationController pushViewController:picker animated:YES];

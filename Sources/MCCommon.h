@@ -11,6 +11,7 @@
 extern NSString *const MCDomain;
 /** SpringBoard tweak 与守护进程之间的 Darwin 通知名。 */
 extern NSString *const MCApplyLimitsNotification;
+extern NSString *const MCProcessChangedNotification;
 /** 状态回写文件（偏好面板读取以显示 PID）。 */
 extern NSString *const MCStatusFileName;
 /** 守护进程日志文件名，位于 MobileSupport 或 jbroot 下的 Library/Logs。 */
@@ -58,6 +59,7 @@ extern const double  MCDefaultLogSizeLimitMB;   /* 2 MB  */
 
 /** AppConfigs -> { key : MCProcessConfig } */
 + (NSDictionary<NSString *, MCProcessConfig *> *)parsedAppConfigs;
++ (NSDictionary<NSString *, MCProcessConfig *> *)parsedAppConfigsFromPreferences:(NSDictionary *)preferences;
 
 /** 默认预设：守护进程首次运行若 AppConfigs 为空则写入。 */
 + (NSDictionary *)defaultAppConfigs;
@@ -69,6 +71,8 @@ extern const double  MCDefaultLogSizeLimitMB;   /* 2 MB  */
 
 /** 按进程名 / 包名解析 PID 列表；找不到返回空数组。 */
 NSArray<NSNumber *> *MCPidsForIdentifier(NSString *identifier);
+/** 一次进程枚举解析整批目标；快照仅用于当前轮次，不跨轮次缓存 PID。 */
+NSDictionary<NSString *, NSArray<NSNumber *> *> *MCPidsForIdentifiers(NSArray<NSString *> *identifiers);
 /** 单个 PID 的可执行文件名。 */
 NSString *MCProcessNameForPid(pid_t pid);
 /** 由 pid 的可执行路径推出 bundle identifier（读 Info.plist）。 */

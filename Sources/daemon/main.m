@@ -89,13 +89,12 @@ static void MCRememberKey(NSString *key, pid_t pid, MCProcessConfig *cfg) {
                        @"cfg": [cfg dictionaryValue] };
 }
 
-static void MCPublishStatus(BOOL enabled) {
+static void MCPublishStatus(BOOL enabled, NSDictionary *configs, NSDictionary *pidSnapshot) {
     NSMutableDictionary *processes = [NSMutableDictionary dictionary];
-    NSDictionary<NSString *, MCProcessConfig *> *configs = [MCCommon parsedAppConfigs];
     for (NSString *key in configs) {
         NSMutableDictionary *entry = [sApplied[key] mutableCopy];
         if (!entry) {
-            pid_t pid = [[MCPidsForIdentifier(key) firstObject] intValue];
+            pid_t pid = [[pidSnapshot[key] firstObject] intValue];
             if (pid <= 0) continue;
             entry = [@{ @"pid": @(pid) } mutableCopy];
         }
@@ -284,12 +283,6 @@ static void MCApplyOne(MCProcessConfig *cfg, pid_t pid) {
 
 /* ------------------------------------------------------------------ 主扫描 */
 
-static void MCRefreshRuntimeLimits(void) {
-    NSNumber *ls = [MCCommon readPreferences][@"LogSizeLimit"];
-    if ([ls isKindOfClass:[NSNumber class]] && ls.doubleValue > 0)
-        sLogSizeLimitMB = ls.doubleValue;
-}
-
 static MCProcessConfig *MCSnapshotConfigFor(NSString *key) {
     NSDictionary *rec = sApplied[key];
     return [MCProcessConfig configWithDictionary:rec[@"cfg"] key:key];
@@ -303,36 +296,47 @@ static MCProcessConfig *MCSnapshotConfigFor(NSString *key) {
  *   4. 新 PID 或配置变化立即应用，定时兜底时强制复核
  */
 static void MCRunSweep(BOOL force) {
+  @autoreleasepool {
     NSDictionary *prefs = [MCCommon readPreferences];
     BOOL enabled = [prefs[@"Enabled"] boolValue];
+    NSNumber *limit = prefs[@"LogSizeLimit"];
+    if ([limit isKindOfClass:NSNumber.class] && limit.doubleValue > 0) sLogSizeLimitMB = limit.doubleValue;
+    static NSDictionary *lastDisabledPreferences;
+    if (!enabled && !force && !sApplied.count && [lastDisabledPreferences isEqual:prefs]) return;
+    lastDisabledPreferences = enabled ? nil : prefs;
+    NSDictionary *configs = [MCCommon parsedAppConfigsFromPreferences:prefs];
+    NSMutableSet *keys = [NSMutableSet setWithArray:[configs allKeys]];
+    [keys addObjectsFromArray:sApplied.allKeys];
+    NSDictionary *pidSnapshot = MCPidsForIdentifiers(keys.allObjects);
 
     if (!enabled) {
         for (NSString *key in [sApplied allKeys]) {
             pid_t pid = [sApplied[key][@"pid"] intValue];
-            if (pid > 0) MCRestoreProcess(MCSnapshotConfigFor(key), pid);
+            if (pid > 0 && [pidSnapshot[key] containsObject:@(pid)]) MCRestoreProcess(MCSnapshotConfigFor(key), pid);
             MCForgetKey(key);
         }
-        MCPublishStatus(NO);
+        MCPublishStatus(NO, configs, pidSnapshot);
         MCLog(@"[配置] 生效开关已关闭，已挂起守护进程并还原默认状态");
         return;
     }
-
-    NSDictionary<NSString *, MCProcessConfig *> *configs = [MCCommon parsedAppConfigs];
 
     for (NSString *key in [sApplied allKeys]) {
         if (configs[key]) continue;
         pid_t pid = [sApplied[key][@"pid"] intValue];
         MCLog(@"[配置] 已有进程从列表移除，已恢复默认");
-        if (pid > 0) MCRestoreProcess(MCSnapshotConfigFor(key), pid);
+        if (pid > 0 && [pidSnapshot[key] containsObject:@(pid)]) MCRestoreProcess(MCSnapshotConfigFor(key), pid);
         MCForgetKey(key);
     }
 
     for (NSString *key in configs) {
         MCProcessConfig *cfg = configs[key];
-        if (![cfg hasAnythingToApply]) continue;
-
-        NSArray<NSNumber *> *pids = MCPidsForIdentifier(key);
+        NSArray<NSNumber *> *pids = pidSnapshot[key] ?: @[];
         NSNumber *tracked = sApplied[key][@"pid"];
+        if (![cfg hasAnythingToApply]) {
+            if (tracked && [pids containsObject:tracked]) MCRestoreProcess(MCSnapshotConfigFor(key), tracked.intValue);
+            MCForgetKey(key);
+            continue;
+        }
 
         if (pids.count == 0) {
             if (tracked) {
@@ -354,13 +358,21 @@ static void MCRunSweep(BOOL force) {
                 (MCGetKernelPriority(pid, &actual) && actual == MCTargetJetsamPriority(cfg.jetsamPriority))) continue;
         }
 
+        if (tracked.intValue == pid) {
+            MCProcessConfig *previous = MCSnapshotConfigFor(key);
+            if ((previous.niceValue && !cfg.niceValue) ||
+                (previous.jetsamPriority != -1 && cfg.jetsamPriority == -1) ||
+                (previous.memLimitActive && !cfg.memLimitActive) ||
+                (previous.memLimitInactive && !cfg.memLimitInactive)) MCRestoreProcess(previous, pid);
+        }
         MCLog(@"[守护] 目标: %@ | PID: %d", key, pid);
         MCApplyOne(cfg, pid);
         MCRememberKey(key, pid, cfg);
         MCLog(@"[守护] %@ PID:%d 完成", key, pid);
     }
 
-    MCPublishStatus(YES);
+    MCPublishStatus(YES, configs, pidSnapshot);
+  }
 }
 
 /* ------------------------------------------------------------------ 队列与事件 */
@@ -368,15 +380,18 @@ static void MCRunSweep(BOOL force) {
 static dispatch_queue_t sWorkerQueue;    /* 串行：所有实际应用都在这里，天然互斥 */
 static dispatch_source_t sDebounceTimer; /* 合并短时间内重复的前台切换通知 */
 static dispatch_source_t sLaunchdForkSource;
+static BOOL sSweepPending;
 
 static void MCScheduleSweepAfter(void) {
+    if (sSweepPending) return;
+    sSweepPending = YES;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         sDebounceTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, sWorkerQueue);
-        dispatch_source_set_event_handler(sDebounceTimer, ^{ MCRunSweep(NO); });
+        dispatch_source_set_event_handler(sDebounceTimer, ^{ sSweepPending = NO; MCRunSweep(NO); });
         dispatch_resume(sDebounceTimer);
     });
-    /* SpringBoard 连续切前台会产生一串通知；600ms 内的重复请求只留最后一次。 */
+    /* 首次事件后 600ms 执行一次；后续事件合并，持续事件不会推迟巡检。 */
     dispatch_source_set_timer(sDebounceTimer,
                               dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
                               DISPATCH_TIME_FOREVER, 0);
@@ -444,7 +459,6 @@ int main(int argc, const char *argv[]) {
         sLogSizeLimitMB = MCDefaultLogSizeLimitMB;
         sApplied   = [NSMutableDictionary dictionary];
 
-        MCRefreshRuntimeLimits();
         MCLog(@"[守护] ProcessGuardian 后台守护进程初始化完成");
         MCLog(@"========================================");
 
@@ -458,7 +472,12 @@ int main(int argc, const char *argv[]) {
                                      sWorkerQueue, ^(int t) { MCScheduleSweepAfter(); }) != 0)
             MCLog(@"[守护] 通知注册失败，仅依赖周期巡检");
 
-        MCRunSweep(NO);
+        dispatch_sync(sWorkerQueue, ^{ MCRunSweep(NO); });
+
+        int processToken = 0;
+        if (notify_register_dispatch(MCProcessChangedNotification.UTF8String, &processToken,
+                                     sWorkerQueue, ^(int t) { MCScheduleSweepAfter(); }) != 0)
+            MCLog(@"[守护] 进程通知注册失败，仅依赖 launchd 事件和周期巡检");
 
         /* launchd 创建系统进程时立即复核；不对进程表做短周期轮询。 */
         sLaunchdForkSource = dispatch_source_create(DISPATCH_SOURCE_TYPE_PROC, 1,
@@ -476,7 +495,6 @@ int main(int argc, const char *argv[]) {
                                                        (int64_t)MCSweepInterval * NSEC_PER_SEC),
                                   (uint64_t)MCSweepInterval * NSEC_PER_SEC, 60 * NSEC_PER_SEC);
         dispatch_source_set_event_handler(sweep, ^{
-            MCRefreshRuntimeLimits();
             MCLog(@"[守护] 开始执行 %ds", (int)MCSweepInterval);
             MCRunSweep(YES);
             MCLog(@"[全局守护] %ds 周期巡检完成。", (int)MCSweepInterval);

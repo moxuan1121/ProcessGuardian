@@ -7,18 +7,13 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-extern NSString *const SALiteBundleID;
-extern NSString *const SALitePrefsDomain;
 
 /// 首选项 plist（rootless: /var/jb/... ；本仓库统一使用 /var/mobile/Library/Preferences）
 extern NSString *const SALitePrefsPlistPath;
 /// 运行时状态（userBlocked 等）
 extern NSString *const SALiteRuntimePlistPath;
 /// 设置界面导航状态记忆
-extern NSString *const SALiteNavigationPlistPath;
 
-extern NSString *const SALiteNotificationPreferencesChanged;
-extern NSString *const SALiteNotificationEvaluate;
 
 @interface SALiteConfig : NSObject
 
@@ -33,7 +28,6 @@ extern NSString *const SALiteNotificationEvaluate;
 // MARK: 单 App 策略
 + (NSDictionary<NSString *, NSDictionary *> *)allPolicies;
 + (NSDictionary *)policyForBundleIdentifier:(nullable NSString *)bundleIdentifier;
-+ (void)setValue:(nullable id)value forKey:(NSString *)key bundleIdentifier:(NSString *)bundleIdentifier;
 
 // MARK: 全局设置
 + (NSDictionary *)globalSettings;
@@ -41,19 +35,13 @@ extern NSString *const SALiteNotificationEvaluate;
 + (BOOL)globalBoolForKey:(NSString *)key;
 + (NSInteger)globalIntegerForKey:(NSString *)key;
 + (BOOL)isGlobalEnabled;
-+ (void)setGlobalValue:(nullable id)value forKey:(NSString *)key;
-+ (void)setGlobalEnabled:(BOOL)enabled;
 
 // MARK: 定时运行
 + (NSInteger)minuteOfDayForDate:(NSDate *)date;
 + (BOOL)isScheduleActiveForPolicy:(NSDictionary *)policy date:(NSDate *)date;
-+ (NSString *)displayTimeForMinuteOfDay:(NSInteger)minute;
 
 // MARK: 其它
 + (NSString *)sharedPathForPath:(NSString *)path;
-+ (NSDictionary *)savedNavigationState;
-+ (void)setNavigationState:(nullable NSDictionary *)state;
-+ (void)clearNavigationState;
 
 @end
 

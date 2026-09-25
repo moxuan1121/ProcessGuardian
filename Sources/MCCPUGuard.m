@@ -48,11 +48,10 @@ static void PGReset(void) {
     sPID = 0; sPath = nil; sStart = sOldCPU = sOldWall = sExceeded = 0; sExceeding = NO;
 }
 
-static BOOL PGSameProcess(void) {
+static BOOL PGSameProcess(uint64_t *cpu) {
     uint64_t start = 0;
     return sPID > 1 && [PGPath(sPID) isEqualToString:sPath] &&
-           PGUsage(sPID, NULL, &start) && start == sStart &&
-           [MCBundleIdForPid(sPID) isEqualToString:sBundle];
+           PGUsage(sPID, cpu, &start) && start == sStart;
 }
 
 static void PGReload(void) {
@@ -81,9 +80,8 @@ static void PGSample(void) {
         }
         return;
     }
-    if (!PGSameProcess()) { PGReset(); return; }
     uint64_t cpu = 0;
-    if (!PGUsage(sPID, &cpu, NULL)) { PGReset(); return; }
+    if (!PGSameProcess(&cpu)) { PGReset(); return; }
     uint64_t now = PGNow();
     if (!sOldWall || now <= sOldWall || cpu < sOldCPU) {
         sOldWall = now; sOldCPU = cpu; return;
@@ -98,7 +96,8 @@ static void PGSample(void) {
     if (percent < sThreshold) { sExceeding = NO; sExceeded = 0; return; }
     if (sExceeding) sExceeded += wall;
     else { sExceeding = YES; sExceeded = 0; }
-    if (sExceeded >= (uint64_t)sDuration * NSEC_PER_SEC && PGSameProcess()) {
+    if (sExceeded >= (uint64_t)sDuration * NSEC_PER_SEC && PGSameProcess(NULL) &&
+        [MCBundleIdForPid(sPID) isEqualToString:sBundle]) {
         // StayAlive receives the real process-death event and may launch a fresh PID.
         kill(sPID, SIGKILL);
         PGReset();

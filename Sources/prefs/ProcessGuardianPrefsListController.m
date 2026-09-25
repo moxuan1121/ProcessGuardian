@@ -146,13 +146,32 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
         ? [NSPropertyListSerialization propertyListWithData:data options:NSPropertyListImmutable format:NULL error:NULL]
         : nil;
 
-    if (![imported[@"AppConfigs"] isKindOfClass:[NSDictionary class]]) {
+    if (![imported isKindOfClass:NSDictionary.class] || ![imported[@"AppConfigs"] isKindOfClass:NSDictionary.class]) {
         [self alertWithMessage:@"无效的配置文件"];
         return;
+    }
+    for (id key in imported[@"AppConfigs"]) {
+        id entry = imported[@"AppConfigs"][key];
+        if (![key isKindOfClass:NSString.class] || ![key length] || ![entry isKindOfClass:NSDictionary.class]) {
+            [self alertWithMessage:@"配置包含无效的进程记录"];
+            return;
+        }
+        for (NSString *field in @[@"MemLimitActive", @"MemLimitInactive", @"JetsamPriority", @"NiceValue", @"CPUThreshold", @"CPUDuration", @"KeepAlive", @"RelaunchAfterRespring"]) {
+            id value = entry[field];
+            if (value && ![value isKindOfClass:NSNumber.class] && ![value isKindOfClass:NSString.class]) {
+                [self alertWithMessage:@"配置包含无效的数值类型"];
+                return;
+            }
+        }
+        if (entry[@"Remark"] && ![entry[@"Remark"] isKindOfClass:NSString.class]) {
+            [self alertWithMessage:@"配置包含无效的备注"];
+            return;
+        }
     }
     NSMutableDictionary *prefs = [MCPrefs readPrefs];
     prefs[@"AppConfigs"] = imported[@"AppConfigs"];
     [MCPrefs writePrefs:prefs wakeDaemon:YES];
+    [self refreshProcessList];
     [self alertWithMessage:@"配置导入成功并已生效"];
 }
 
@@ -162,7 +181,7 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
         [self alertWithMessage:@"当前配置为空"];
         return;
     }
-    NSString *dest = [NSTemporaryDirectory() stringByAppendingPathComponent:@"MemoryControlRe.plist"];
+    NSString *dest = [NSTemporaryDirectory() stringByAppendingPathComponent:@"ProcessGuardian.plist"];
     if (![@{ @"AppConfigs": apps } writeToFile:dest atomically:YES]) {
         [self alertWithMessage:@"导出失败"];
         return;
@@ -170,7 +189,6 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
     UIDocumentPickerViewController *share =
         [[UIDocumentPickerViewController alloc] initForExportingURLs:@[ [NSURL fileURLWithPath:dest] ]
                                                              asCopy:YES];
-    share.delegate = self;
     [self presentViewController:share animated:YES completion:nil];
 }
 
@@ -199,6 +217,7 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
         NSMutableDictionary *p = [MCPrefs readPrefs];
         p[@"AppConfigs"] = [MCCommon defaultAppConfigs];
         [MCPrefs writePrefs:p wakeDaemon:YES];
+        [ws refreshProcessList];
         [ws alertWithMessage:@"已恢复默认配置"];
     }]];
     [self presentViewController:confirm animated:YES completion:nil];
@@ -292,6 +311,9 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
 
     NSDictionary *apps = [MCPrefs readPrefs][@"AppConfigs"];
     if (![apps isKindOfClass:[NSDictionary class]]) apps = @{};
+    NSDictionary *pidSnapshot = MCPidsForIdentifiers(apps.allKeys);
+    id processes = [MCPrefs readStatus][@"Processes"];
+    if (![processes isKindOfClass:NSDictionary.class]) processes = @{};
     NSString *query = self.processSearch.searchBar.text.lowercaseString;
     for (NSString *key in [self sortedProcessKeys:apps]) {
         NSDictionary *cfg = [apps[key] isKindOfClass:[NSDictionary class]] ? apps[key] : @{};
@@ -304,7 +326,8 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
             set:nil get:nil detail:[PSListController class] cell:PSLinkCell edit:nil];
         [item setProperty:[MCRootProcessCell class] forKey:@"cellClass"];
         [item setProperty:key forKey:@"processIdentifier"];
-        [item setProperty:[MCPrefs subtitleForIdentifier:key config:cfg] forKey:@"subtitle"];
+        pid_t pid = [[pidSnapshot[key] firstObject] intValue];
+        [item setProperty:[MCPrefs subtitleForConfig:cfg pid:pid status:processes[key]] forKey:@"subtitle"];
         [items addObject:item];
     }
 

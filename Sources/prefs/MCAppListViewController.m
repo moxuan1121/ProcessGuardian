@@ -13,6 +13,7 @@
 @property (nonatomic, strong) NSArray<NSString *> *appIds;        /* 包名，与下面按下标对齐 */
 @property (nonatomic, strong) NSArray<NSString *> *appNames;
 @property (nonatomic, strong) NSArray<NSString *> *processNames;
+@property (nonatomic, copy) NSSet<NSString *> *runningAppIds;
 
 @property (nonatomic, copy) NSArray<NSArray<NSString *> *> *visibleSections;
 @property (nonatomic, copy) NSArray<NSString *> *visibleTitles;
@@ -77,6 +78,7 @@
     for (NSString *bid in self.appIds) [names addObject:apps[bid]];
     self.appNames = names;
     self.processNames = [MCPrefs runningProcessNames];
+    self.runningAppIds = [NSSet setWithArray:MCPidsForIdentifiers(self.appIds).allKeys];
 }
 
 - (BOOL)showingProcesses { return self.sourceControl.selectedSegmentIndex == 1; }
@@ -147,7 +149,7 @@
     BOOL process = [self.visibleTitles[path.section] isEqualToString:@"系统进程"];
     NSUInteger src = [self.appIds indexOfObject:identifier];
     NSString *name = process || src == NSNotFound ? identifier : self.appNames[src];
-    BOOL running = process || MCPidsForIdentifier(identifier).count > 0;
+    BOOL running = process || [self.runningAppIds containsObject:identifier];
     NSString *subtitle = process ? (running ? @"系统进程 · 运行中" : @"系统进程 · 未运行")
         : [NSString stringWithFormat:@"%@ · %@", identifier, running ? @"运行中" : @"未运行"];
     [c configureWithTitle:name subtitle:subtitle running:running];

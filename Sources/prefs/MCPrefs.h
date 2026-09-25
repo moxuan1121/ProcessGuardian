@@ -23,7 +23,7 @@
 + (NSArray<NSString *> *)runningProcessNames;
 
 /** 两行摘要：当前内核状态与保存的配置。 */
-+ (NSString *)subtitleForIdentifier:(NSString *)key config:(NSDictionary *)cfg;
++ (NSString *)subtitleForConfig:(NSDictionary *)cfg pid:(pid_t)pid status:(NSDictionary *)status;
 
 @end
 

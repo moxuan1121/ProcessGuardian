@@ -16,7 +16,7 @@
 #import <UIKit/UIKit.h>
 #import "MCCPUGuard.h"
 
-static NSString *const kApplyLimitsNotification = @"com.moxuan.processguardian/ApplyLimits";
+static NSString *const kApplyLimitsNotification = @"com.moxuan.processguardian/ProcessChanged";
 
 typedef void (*MCFrontDisplayChangedIMP)(id, SEL, id);
 
@@ -35,8 +35,6 @@ static NSString *MCFrontmostBundle(void) {
 static void MC_frontDisplayDidChange(id self, SEL _cmd, id display) {
     if (sOriginalIMP) sOriginalIMP(self, _cmd, display);
     MCCPUGuardFrontmostChanged(MCFrontmostBundle());
-
-    os_log(OS_LOG_DEFAULT, "[MemoryControlRe] front display changed, notifying daemon");
 
     /* 只发一个纯信号，不带 payload：读配置、算 PID、下内核调用全在守护进程里。 */
     CFNotificationCenterPostNotification(

@@ -112,7 +112,7 @@ static void SALiteApplicationProcessDidLaunch(id self, SEL _cmd, id process)
         ((void (*)(id, SEL, id))SALiteOriginalProcessDidLaunch)(self, _cmd, process);
     }
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-        CFSTR("com.moxuan.processguardian/ApplyLimits"), NULL, NULL, true);
+        CFSTR("com.moxuan.processguardian/ProcessChanged"), NULL, NULL, true);
     if (SALiteRuntimeActive) {
         [[SALiteStayAliveManager sharedManager] applicationProcessDidLaunch:process];
     }

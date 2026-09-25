@@ -117,13 +117,9 @@ NSArray<NSString *> *MCPriorityNames(void) {
     return [names sortedArrayUsingSelector:@selector(compare:)];
 }
 
-+ (NSString *)subtitleForIdentifier:(NSString *)key config:(NSDictionary *)cfg {
-    pid_t pid = 0;
-    for (NSNumber *p in MCPidsForIdentifier(key)) { pid = p.intValue; break; }
++ (NSString *)subtitleForConfig:(NSDictionary *)cfg pid:(pid_t)pid status:(NSDictionary *)status {
     NSString *actualPriority = @"?", *actualNice = @"?";
     if (pid > 0) {
-        id processes = [MCPrefs readStatus][@"Processes"];
-        id status = [processes isKindOfClass:[NSDictionary class]] ? processes[key] : nil;
         if (![status isKindOfClass:[NSDictionary class]]) status = nil;
         BOOL samePid = [status[@"pid"] intValue] == pid;
         if (samePid && [status[@"ActualJetsam"] isKindOfClass:[NSNumber class]])

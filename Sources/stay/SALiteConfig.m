@@ -4,24 +4,14 @@
 //
 
 #import "SALiteConfig.h"
-#import <notify.h>
-#import <sys/stat.h>
 #import <roothide.h>
 
-NSString *const SALiteBundleID = @"com.moxuan.processguardian";
-NSString *const SALitePrefsDomain = @"com.moxuan.processguardian.preferences";
 
 NSString *const SALitePrefsPlistPath     = @"/var/mobile/Library/Preferences/com.moxuan.processguardian.plist";
 NSString *const SALiteRuntimePlistPath   = @"/var/mobile/Library/Preferences/com.moxuan.processguardian.runtime.plist";
-NSString *const SALiteNavigationPlistPath = @"/var/mobile/Library/Preferences/com.moxuan.processguardian.navigation.plist";
 
-NSString *const SALiteNotificationPreferencesChanged = @"com.moxuan.processguardian/ApplyLimits";
-NSString *const SALiteNotificationEvaluate           = @"com.moxuan.processguardian/evaluate";
 
 static NSString *const kKeyGlobalEnabled   = @"globalEnabled";
-static NSString *const kKeyApps            = @"apps";
-static NSString *const kKeyVersion         = @"version";
-static NSString *const kKeyUpdatedAt       = @"updatedAt";
 static NSString *const kKeyGlobal          = @"global";
 
 static NSString *const kKeyEnabled              = @"enabled";
@@ -40,18 +30,10 @@ static NSString *const kKeyLongPressEnabled     = @"longPressEnabled";
 
 static const NSInteger SALiteMinutesPerDay = 1439; // 24*60-1
 
-/// 写 plist 并放开权限，便于 SpringBoard / Preferences 双向读写
+/// SpringBoard 只读共享配置；写入统一由设置页处理。
 static NSDictionary *SALiteReadPlist(NSString *path)
 {
     return [NSDictionary dictionaryWithContentsOfFile:jbroot(path)];
-}
-
-static void SALiteWritePlist(NSDictionary *dict, NSString *path)
-{
-    if (![dict isKindOfClass:[NSDictionary class]] || path.length == 0) return;
-    NSString *actual = jbroot(path);
-    [dict writeToFile:actual atomically:YES];
-    chmod([actual fileSystemRepresentation], 0666);
 }
 
 @implementation SALiteConfig
@@ -130,33 +112,6 @@ static void SALiteWritePlist(NSDictionary *dict, NSString *path)
     return [self allPolicies][bundleIdentifier] ?: [self defaultPolicy];
 }
 
-+ (void)setValue:(id)value forKey:(NSString *)key bundleIdentifier:(NSString *)bundleIdentifier
-{
-    if (bundleIdentifier.length == 0 || key.length == 0) return;
-
-    @synchronized(self) {
-        NSMutableDictionary *root = [[self rootDictionary] mutableCopy];
-
-        id rawApps = root[kKeyApps];
-        NSMutableDictionary *apps = [[self normalizedDictionary:(rawApps ?: @{}) defaults:@{}] mutableCopy];
-
-        NSMutableDictionary *policy = [[self normalizedDictionary:apps[bundleIdentifier]
-                                                         defaults:[self defaultPolicy]] mutableCopy];
-        if (value) {
-            policy[key] = value;
-        } else {
-            [policy removeObjectForKey:key];
-        }
-
-        apps[bundleIdentifier] = [policy copy];
-        root[kKeyApps] = [apps copy];
-        root[kKeyVersion] = @1;
-        SALiteWritePlist([root copy], SALitePrefsPlistPath);
-    }
-
-    notify_post([SALiteNotificationPreferencesChanged UTF8String]);
-}
-
 // MARK: - 全局设置
 
 + (NSDictionary *)globalSettings
@@ -184,35 +139,6 @@ static void SALiteWritePlist(NSDictionary *dict, NSString *path)
 + (BOOL)isGlobalEnabled
 {
     return [[[self rootDictionary] objectForKey:@"Enabled"] boolValue];
-}
-
-+ (void)setGlobalValue:(id)value forKey:(NSString *)key
-{
-    if (key.length == 0) return;
-
-    @synchronized(self) {
-        NSMutableDictionary *root = [[self rootDictionary] mutableCopy];
-
-        id rawGlobal = root[kKeyGlobal];
-        NSMutableDictionary *global = [[self normalizedDictionary:(rawGlobal ?: @{})
-                                                         defaults:[self defaultGlobalSettings]] mutableCopy];
-        if (value) {
-            global[key] = value;
-        } else {
-            [global removeObjectForKey:key];
-        }
-
-        root[kKeyGlobal] = [global copy];
-        root[kKeyVersion] = @1;
-        SALiteWritePlist([root copy], SALitePrefsPlistPath);
-    }
-
-    notify_post([SALiteNotificationPreferencesChanged UTF8String]);
-}
-
-+ (void)setGlobalEnabled:(BOOL)enabled
-{
-    [self setGlobalValue:@(enabled) forKey:kKeyGlobalEnabled];
 }
 
 // MARK: - 定时运行
@@ -246,39 +172,11 @@ static void SALiteWritePlist(NSDictionary *dict, NSString *path)
     return (startPos >= end) ? crossMidnight : inWindow;
 }
 
-+ (NSString *)displayTimeForMinuteOfDay:(NSInteger)minute
-{
-    NSInteger m = MIN(MAX(minute, 0), SALiteMinutesPerDay);
-    return [NSString stringWithFormat:@"%02ld:%02ld", (long)(m / 60), (long)(m % 60)];
-}
-
-// MARK: - 路径 / 导航状态
+// MARK: - 路径
 
 + (NSString *)sharedPathForPath:(NSString *)path
 {
     return jbroot(path);
-}
-
-+ (NSDictionary *)savedNavigationState
-{
-    NSDictionary *dict = SALiteReadPlist(SALiteNavigationPlistPath);
-    return dict ?: @{};
-}
-
-+ (void)setNavigationState:(NSDictionary *)state
-{
-    if ([state isKindOfClass:[NSDictionary class]] && state.count > 0) {
-        NSMutableDictionary *m = [state mutableCopy];
-        m[kKeyUpdatedAt] = @([NSDate date].timeIntervalSince1970);
-        SALiteWritePlist([m copy], SALiteNavigationPlistPath);
-    } else {
-        [self clearNavigationState];
-    }
-}
-
-+ (void)clearNavigationState
-{
-    [[NSFileManager defaultManager] removeItemAtPath:jbroot(SALiteNavigationPlistPath) error:NULL];
 }
 
 @end

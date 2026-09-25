@@ -7,6 +7,7 @@
 
 NSString *const MCDomain                 = @"com.moxuan.processguardian";
 NSString *const MCApplyLimitsNotification = @"com.moxuan.processguardian/ApplyLimits";
+NSString *const MCProcessChangedNotification = @"com.moxuan.processguardian/ProcessChanged";
 NSString *const MCStatusFileName          = @"com.moxuan.processguardian.status.plist";
 NSString *const MCLogFileName             = @"ProcessGuardian.log";
 
@@ -128,7 +129,10 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
 }
 
 + (NSDictionary<NSString *, MCProcessConfig *> *)parsedAppConfigs {
-    NSDictionary *raw = [self readPreferences];
+    return [self parsedAppConfigsFromPreferences:[self readPreferences]];
+}
+
++ (NSDictionary<NSString *, MCProcessConfig *> *)parsedAppConfigsFromPreferences:(NSDictionary *)raw {
     NSDictionary *apps = [raw[@"AppConfigs"] isKindOfClass:[NSDictionary class]] ? raw[@"AppConfigs"] : @{};
     NSMutableDictionary *out = [NSMutableDictionary dictionary];
     [apps enumerateKeysAndObjectsUsingBlock:^(NSString *key, NSDictionary *cfg, BOOL *stop) {
@@ -159,6 +163,7 @@ static NSArray<NSNumber *> *MCAllPids(void) {
     NSMutableArray<NSNumber *> *pids = [NSMutableArray array];
     NSUInteger cap = n / sizeof(pid_t) * 2;
     pid_t *buf = calloc(cap, sizeof(pid_t));
+    if (!buf) return @[];
     n = proc_listpids(PROC_ALL_PIDS, 0, buf, (int)(cap * sizeof(pid_t)));
     if (n > 0) {
         for (int i = 0; i < n / (int)sizeof(pid_t); i++)
@@ -174,33 +179,54 @@ NSString *MCProcessNameForPid(pid_t pid) {
     return [@(path) lastPathComponent];
 }
 
-NSString *MCBundleIdForPid(pid_t pid) {
-    char path[PROC_PIDPATHINFO_MAXSIZE] = {0};
-    if (proc_pidpath(pid, path, sizeof(path)) <= 0) return nil;
-    NSString *exe = @(path);
+static NSString *MCBundlePathForExecutable(NSString *exe) {
     /* 主程序在 Foo.app/Foo，扩展在 Foo.app/PlugIns/Bar.appex/Bar —— 都要向上找到 .app */
     NSRange app = [exe rangeOfString:@".app" options:NSBackwardsSearch];
     if (app.location == NSNotFound) return nil;
     NSString *appBundle = [exe substringToIndex:app.location + app.length];
-    if (![appBundle hasSuffix:@".app"]) {
-        NSRange cut = [appBundle rangeOfString:@".app"];
-        appBundle = [appBundle substringToIndex:cut.location + cut.length];
-    }
-    NSString *info = [appBundle stringByAppendingPathComponent:@"Info.plist"];
+    return appBundle;
+}
+
+static NSString *MCBundleIdAtPath(NSString *bundlePath) {
+    NSString *info = [bundlePath stringByAppendingPathComponent:@"Info.plist"];
     NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:info];
     id bid = d[@"CFBundleIdentifier"];
     return [bid isKindOfClass:[NSString class]] ? bid : nil;
 }
 
+NSString *MCBundleIdForPid(pid_t pid) {
+    char path[PROC_PIDPATHINFO_MAXSIZE] = {0};
+    if (proc_pidpath(pid, path, sizeof(path)) <= 0) return nil;
+    NSString *bundlePath = MCBundlePathForExecutable(@(path));
+    return bundlePath ? MCBundleIdAtPath(bundlePath) : nil;
+}
+
 NSArray<NSNumber *> *MCPidsForIdentifier(NSString *identifier) {
     if (identifier.length == 0) return @[];
-    NSMutableArray *out = [NSMutableArray array];
+    return MCPidsForIdentifiers(@[identifier])[identifier] ?: @[];
+}
+
+NSDictionary<NSString *, NSArray<NSNumber *> *> *MCPidsForIdentifiers(NSArray<NSString *> *identifiers) {
+    if (!identifiers.count) return @{};
+    NSSet *targets = [NSSet setWithArray:identifiers];
+    NSMutableDictionary<NSString *, NSMutableArray<NSNumber *> *> *out = [NSMutableDictionary dictionary];
+    NSMutableDictionary *bundleIds = [NSMutableDictionary dictionary];
     for (NSNumber *pn in MCAllPids()) {
-        pid_t pid = pn.intValue;
-        NSString *name = MCProcessNameForPid(pid);
-        if (name && [name isEqualToString:identifier]) { [out addObject:pn]; continue; }
-        NSString *bid = MCBundleIdForPid(pid);
-        if (bid && [bid isEqualToString:identifier]) [out addObject:pn];
+        char path[PROC_PIDPATHINFO_MAXSIZE] = {0};
+        if (proc_pidpath(pn.intValue, path, sizeof(path)) <= 0) continue;
+        NSString *exe = @(path), *name = exe.lastPathComponent;
+        NSString *bundlePath = MCBundlePathForExecutable(exe);
+        id bid = bundlePath ? bundleIds[bundlePath] : nil;
+        if (bundlePath && !bid) {
+            bid = MCBundleIdAtPath(bundlePath) ?: [NSNull null];
+            bundleIds[bundlePath] = bid;
+        }
+        NSArray *matches = [bid isEqual:name] ? @[name] : @[name, bid ?: [NSNull null]];
+        for (id key in matches) {
+            if (![targets containsObject:key]) continue;
+            if (!out[key]) out[key] = [NSMutableArray array];
+            [out[key] addObject:pn];
+        }
     }
     return out;
 }

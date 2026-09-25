@@ -298,6 +298,7 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
 
 - (void)recoverNextStartupApplication
 {
+    self.startupRecoveryScheduled = NO;
     if (self.startupRecoveryQueue.count == 0) {
         self.startupRecoveryScheduled = NO;   // 尾调用：排完即止
         return;
