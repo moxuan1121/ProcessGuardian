@@ -190,8 +190,8 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"前台 CPU 上限 (%)"
                      footer:@"0 关闭；2～1000 为 CPU 百分比阈值。100% 约为单个核心满载"
                      key:@"CPUThreshold"]];
-    [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"连续超限时间 (秒)"
-                     footer:@"默认 10 秒；只有前台 CPU 上限大于 0 时生效"
+    [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"CPU 超限时间 (秒)"
+                     footer:@"默认 10 秒；内核监控按此时间窗口判定，回退采样按连续超限判定"
                      key:@"CPUDuration"]];
 
     [switches addObject:[MCEditRow rowWithKind:MCEditRowSwitch title:@"后台被杀后自动重新拉起"

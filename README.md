@@ -6,10 +6,10 @@ iOS 15–17.3 RootHide 隐根插件：在设置中管理进程的 nice 与 Jetsa
 
 - `ProcessGuardianPrefs.bundle`：设置中的进程列表与单项编辑页。可选应用或输入进程名；后台重拉只适用于应用包名。
 - `processguardiand`：root LaunchDaemon，应用内存与优先级设置；不做高频 CPU 采样。
-- `ProcessGuardian.dylib`：SpringBoard 前台切换探针与前台 CPU 采样。CPU 达到配置阈值并连续超过指定秒数时，核对 PID、启动时间、路径和包名后发送 `SIGKILL`。
+- `ProcessGuardian.dylib`：SpringBoard 前台切换探针。前台 CPU 限制优先使用 XNU fatal CPU monitor；设置失败或阈值超过 100% 时回退到原来的每秒采样与 `SIGKILL`。
 - `ProcessGuardianStay.dylib`：基于 StayAliveLite 重构的 SpringBoard 断言和重拉逻辑。用户上滑关闭会暂停重拉；系统内存限制或 CPU 阈值导致的进程退出可重新拉起。
 
-显式内存上限始终为 fatal 限额。CPU 阈值只监控前台应用；100% 约等于单个核心满载。守护与限额同时启用时，先让旧 PID 退出，再由守护逻辑启动新 PID。守护进程每 30 分钟兜底巡检一次；前台变化、应用启动和设置变更会立即触发检查。
+显式内存上限始终为 fatal 限额。CPU 阈值只监控前台应用；100% 约等于单个核心满载。内核监控的时间窗口与回退采样的「连续超限」判定并不完全相同。切出前台时会停用本插件设置的内核监控；XNU 的 fatal 标志在进程存活期间不能清除，因此此分支必须先在 RootHide 真机验证前后台切换及系统 CPU 策略的交互。守护与限额同时启用时，先让旧 PID 退出，再由守护逻辑启动新 PID。守护进程每 30 分钟兜底巡检一次；前台变化、应用启动和设置变更会立即触发检查。
 
 ## 构建
 

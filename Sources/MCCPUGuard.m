@@ -1,4 +1,4 @@
-// CPU sampling and PID identity checks adapted from CPUOverloadKiller (GPL-3.0).
+// CPU fallback sampling and PID identity checks adapted from CPUOverloadKiller (GPL-3.0).
 // Only an explicitly configured foreground application is monitored.
 #import "MCCPUGuard.h"
 #import "MCCommon.h"
@@ -6,8 +6,12 @@
 #import <libproc_internal.h>
 #import <mach/mach_time.h>
 #import <notify.h>
+#import <os/log.h>
 #import <signal.h>
 #import <time.h>
+#import <errno.h>
+#import <string.h>
+#import <dlfcn.h>
 
 typedef struct {
     uint8_t uuid[16];
@@ -22,8 +26,10 @@ static NSString *sBundle, *sPath;
 static pid_t sPID;
 static uint64_t sStart, sOldCPU, sOldWall, sExceeded;
 static BOOL sExceeding;
+static BOOL sKernelActive, sKernelAttempted;
 static NSInteger sThreshold, sDuration;
 static int sNotifyToken = -1;
+static int (*sDisableCPUMonitor)(int);
 
 static uint64_t PGNow(void) {
     struct timespec t = {0};
@@ -46,12 +52,19 @@ static NSString *PGPath(pid_t pid) {
 
 static void PGReset(void) {
     sPID = 0; sPath = nil; sStart = sOldCPU = sOldWall = sExceeded = 0; sExceeding = NO;
+    sKernelActive = sKernelAttempted = NO;
 }
 
 static BOOL PGSameProcess(uint64_t *cpu) {
     uint64_t start = 0;
     return sPID > 1 && [PGPath(sPID) isEqualToString:sPath] &&
            PGUsage(sPID, cpu, &start) && start == sStart;
+}
+
+static void PGStopKernel(void) {
+    if (sKernelActive && PGSameProcess(NULL) && sDisableCPUMonitor(sPID) != 0)
+        os_log_error(OS_LOG_DEFAULT, "ProcessGuardian: disable CPU monitor PID %{public}d failed: %{public}d", sPID, errno);
+    sKernelActive = NO;
 }
 
 static void PGReload(void) {
@@ -62,6 +75,7 @@ static void PGReload(void) {
     NSInteger duration = [cfg[@"CPUDuration"] integerValue];
     sThreshold = [prefs[@"Enabled"] boolValue] && threshold >= 2 && threshold <= 1000 ? threshold : 0;
     sDuration = duration >= 1 && duration <= 3600 ? duration : 10;
+    PGStopKernel();
     PGReset();
     dispatch_source_set_timer(sTimer, sThreshold ? dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC) : DISPATCH_TIME_FOREVER,
                               sThreshold ? NSEC_PER_SEC : DISPATCH_TIME_FOREVER, NSEC_PER_MSEC * 100);
@@ -82,6 +96,22 @@ static void PGSample(void) {
     }
     uint64_t cpu = 0;
     if (!PGSameProcess(&cpu)) { PGReset(); return; }
+    if (!sKernelAttempted) {
+        sKernelAttempted = YES;
+        // XNU's CPU monitor percentage is limited to a single core; keep the
+        // process-wide sampler for multi-core thresholds and unsupported PIDs.
+        int (*setMonitor)(int, int, int) = dlsym(RTLD_DEFAULT, "proc_set_cpumon_params_fatal");
+        sDisableCPUMonitor = dlsym(RTLD_DEFAULT, "proc_disable_cpumon");
+        if (sThreshold <= 100 && setMonitor && sDisableCPUMonitor &&
+            setMonitor(sPID, (int)sThreshold, (int)sDuration) == 0) {
+            sKernelActive = YES;
+            dispatch_source_set_timer(sTimer, DISPATCH_TIME_FOREVER, DISPATCH_TIME_FOREVER, 0);
+            os_log(OS_LOG_DEFAULT, "ProcessGuardian: kernel CPU monitor PID %{public}d: %{public}ld%% / %{public}lds", sPID, (long)sThreshold, (long)sDuration);
+            return;
+        }
+        if (sThreshold <= 100 && setMonitor && sDisableCPUMonitor)
+            os_log_error(OS_LOG_DEFAULT, "ProcessGuardian: kernel CPU monitor PID %{public}d failed: %{public}d (%{public}s); using sampler", sPID, errno, strerror(errno));
+    }
     uint64_t now = PGNow();
     if (!sOldWall || now <= sOldWall || cpu < sOldCPU) {
         sOldWall = now; sOldCPU = cpu; return;
