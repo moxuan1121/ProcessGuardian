@@ -180,11 +180,12 @@ NSString *MCProcessNameForPid(pid_t pid) {
 }
 
 static NSString *MCBundlePathForExecutable(NSString *exe) {
-    /* 主程序在 Foo.app/Foo，扩展在 Foo.app/PlugIns/Bar.appex/Bar —— 都要向上找到 .app */
-    NSRange app = [exe rangeOfString:@".app" options:NSBackwardsSearch];
-    if (app.location == NSNotFound) return nil;
-    NSString *appBundle = [exe substringToIndex:app.location + app.length];
-    return appBundle;
+    /* Match a directory extension: a substring search mistakes .appex for .app. */
+    for (NSString *dir = exe.stringByDeletingLastPathComponent; dir.length > 1;
+         dir = dir.stringByDeletingLastPathComponent) {
+        if ([dir.pathExtension isEqualToString:@"app"]) return dir;
+    }
+    return nil;
 }
 
 static NSString *MCBundleIdAtPath(NSString *bundlePath) {
