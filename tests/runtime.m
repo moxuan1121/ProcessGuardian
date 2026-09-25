@@ -10,7 +10,7 @@ static int enumerations, pathReads, priorityWrites;
 static int32_t actualPriority;
 
 int proc_listpids(uint32_t type, uint32_t info, void *buffer, int size) {
-    pid_t pids[] = {900101, 900102, 900103};
+    pid_t pids[] = {900102, 900101, 900103}; // Extension appears before the main app in the OS list.
     if (!buffer) { enumerations++; return sizeof(pids); }
     assert(size >= (int)sizeof(pids));
     memcpy(buffer, pids, sizeof(pids));

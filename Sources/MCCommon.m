@@ -226,7 +226,9 @@ NSDictionary<NSString *, NSArray<NSNumber *> *> *MCPidsForIdentifiers(NSArray<NS
         for (id key in matches) {
             if (![targets containsObject:key]) continue;
             if (!out[key]) out[key] = [NSMutableArray array];
-            [out[key] addObject:pn];
+            if ([key isEqual:bid] && [exe.stringByDeletingLastPathComponent isEqual:bundlePath])
+                [out[key] insertObject:pn atIndex:0]; // Prefer the app itself over its extensions.
+            else [out[key] addObject:pn];
         }
     }
     return out;
