@@ -39,6 +39,8 @@ FOUNDATION_EXPORT void SALiteLoadLaunchFrameworks(void);
 @property (nonatomic, strong) NSMutableSet<NSString *> *autoLaunchPending;
 /// 已订阅进程死亡的 pid
 @property (nonatomic, strong) NSMutableSet<NSNumber *> *watchedPIDs;
+/// pid -> dispatch process-exit source
+@property (nonatomic, strong) NSMutableDictionary<NSNumber *, id> *deathSources;
 /// bid -> @(eligible)，用于检测上升沿
 @property (nonatomic, strong) NSMutableDictionary *lastEligibility;
 /// bid -> @(timeIntervalSince1970)
