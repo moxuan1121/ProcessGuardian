@@ -107,7 +107,7 @@ void MCCPUGuardUpdate(NSDictionary *configs, NSDictionary *pidSnapshot, BOOL ena
         target[@"cpu"] = @0; target[@"wall"] = @0; target[@"exceeded"] = @0;
         target[@"exceeding"] = @NO; target[@"due"] = PGAllowed(target) ? @(now) : @0;
         sTargets[pid] = target;
-        log([NSString stringWithFormat:@"[CPU] 开始监测 %@ PID:%@ 阈值:%@%% 持续:%@秒", key, pid,
+        log([NSString stringWithFormat:@"[CPU] 开始监测 %@ PID:%@ 阈值:%@%% 持续:%@秒", target[@"key"], pid,
              target[@"threshold"], target[@"duration"]]);
     }
 }
