@@ -30,7 +30,7 @@ extern const double  MCDefaultLogSizeLimitMB;   /* 2 MB  */
 @property (nonatomic, assign) NSInteger jetsamPriority;    /* -1=不动，0=交还系统 */
 @property (nonatomic, assign) NSInteger niceValue;         /* PRIO_MIN..PRIO_MAX */
 @property (nonatomic, assign) NSInteger cpuThreshold;     /* 前台 CPU 百分比；0=关闭 */
-@property (nonatomic, assign) NSInteger cpuDuration;      /* 内核监控窗口或回退采样的连续超限秒数 */
+@property (nonatomic, assign) NSInteger cpuDuration;      /* 内核 CPU 监控窗口秒数 */
 
 @property (nonatomic, copy)   NSString *remark;       /* 偏好面板显示名 */
 

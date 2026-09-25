@@ -26,6 +26,7 @@ static MCFrontDisplayChangedIMP sOriginalProcessLaunchIMP;
 
 static void MC_applicationProcessDidLaunch(id self, SEL cmd, id process) {
     if (sOriginalProcessLaunchIMP) sOriginalProcessLaunchIMP(self, cmd, process);
+    MCCPUGuardProcessStarted();
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
         (__bridge CFStringRef)kApplyLimitsNotification, NULL, NULL, true);
 }

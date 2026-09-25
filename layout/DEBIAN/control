@@ -1,6 +1,6 @@
 Package: com.moxuan.processguardian
 Name: ProcessGuardian
-Version: 0.1.24~kernel5
+Version: 0.1.24~kernel6
 Architecture: iphoneos-arm64e
 Description: iOS process priority, memory and kernel foreground CPU limits
 Maintainer: moxuan1121

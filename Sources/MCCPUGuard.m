@@ -1,14 +1,11 @@
-// CPU fallback sampling and PID identity checks adapted from CPUOverloadKiller (GPL-3.0).
+// PID identity checks adapted from CPUOverloadKiller (GPL-3.0).
 // Only an explicitly configured foreground application is monitored.
 #import "MCCPUGuard.h"
 #import "MCCommon.h"
 #import <libproc.h>
 #import <libproc_internal.h>
-#import <mach/mach_time.h>
 #import <notify.h>
 #import <os/log.h>
-#import <signal.h>
-#import <time.h>
 #import <errno.h>
 #import <string.h>
 #import <dlfcn.h>
@@ -21,26 +18,17 @@ typedef struct {
 } PGUsageV0;
 
 static dispatch_queue_t sQueue;
-static dispatch_source_t sTimer;
 static NSString *sBundle, *sPath;
 static pid_t sPID;
-static uint64_t sStart, sOldCPU, sOldWall, sExceeded;
-static BOOL sExceeding;
-static BOOL sKernelActive, sKernelAttempted;
+static uint64_t sStart, sGeneration;
+static BOOL sKernelActive;
 static NSInteger sThreshold, sDuration;
 static int sNotifyToken = -1;
 static int (*sDisableCPUMonitor)(int);
 
-static uint64_t PGNow(void) {
-    struct timespec t = {0};
-    clock_gettime(CLOCK_MONOTONIC, &t);
-    return (uint64_t)t.tv_sec * NSEC_PER_SEC + t.tv_nsec;
-}
-
-static BOOL PGUsage(pid_t pid, uint64_t *cpu, uint64_t *start) {
+static BOOL PGIdentity(pid_t pid, uint64_t *start) {
     PGUsageV0 u = {0};
     if (pid <= 1 || proc_pid_rusage(pid, RUSAGE_INFO_V0, &u) != 0 || !u.processStartAbsoluteTime) return NO;
-    if (cpu) *cpu = u.userTime + u.systemTime;
     if (start) *start = u.processStartAbsoluteTime;
     return YES;
 }
@@ -51,97 +39,90 @@ static NSString *PGPath(pid_t pid) {
 }
 
 static void PGReset(void) {
-    sPID = 0; sPath = nil; sStart = sOldCPU = sOldWall = sExceeded = 0; sExceeding = NO;
-    sKernelActive = sKernelAttempted = NO;
+    sPID = 0; sPath = nil; sStart = 0;
+    sKernelActive = NO;
 }
 
-static BOOL PGSameProcess(uint64_t *cpu) {
+static BOOL PGSameProcess(void) {
     uint64_t start = 0;
     return sPID > 1 && [PGPath(sPID) isEqualToString:sPath] &&
-           PGUsage(sPID, cpu, &start) && start == sStart;
+           PGIdentity(sPID, &start) && start == sStart;
 }
 
 static void PGStopKernel(void) {
-    if (sKernelActive && PGSameProcess(NULL) && sDisableCPUMonitor(sPID) != 0)
+    if (sKernelActive && PGSameProcess() && sDisableCPUMonitor(sPID) != 0)
         os_log_error(OS_LOG_DEFAULT, "ProcessGuardian: disable CPU monitor PID %{public}d failed: %{public}d", sPID, errno);
     sKernelActive = NO;
 }
 
+static void PGApply(unsigned attempt);
+
 static void PGReload(void) {
+    ++sGeneration; // Cancel pending PID discovery from an earlier foreground/configuration.
     NSDictionary *prefs = [MCCommon readPreferences];
     NSDictionary *cfg = sBundle.length && [prefs[@"AppConfigs"] isKindOfClass:NSDictionary.class]
                         ? prefs[@"AppConfigs"][sBundle] : nil;
     NSInteger threshold = [cfg[@"CPUThreshold"] integerValue];
     NSInteger duration = [cfg[@"CPUDuration"] integerValue];
-    sThreshold = [prefs[@"Enabled"] boolValue] && threshold >= 2 && threshold <= 1000 ? threshold : 0;
+    sThreshold = [prefs[@"Enabled"] boolValue] && threshold >= 2 && threshold <= 100 ? threshold : 0;
+    if ([prefs[@"Enabled"] boolValue] && threshold != 0 && !sThreshold)
+        os_log_error(OS_LOG_DEFAULT, "ProcessGuardian: CPU threshold %{public}ld outside kernel range 2-100; monitor not enabled", (long)threshold);
     sDuration = duration >= 1 && duration <= 3600 ? duration : 10;
     PGStopKernel();
     PGReset();
-    dispatch_source_set_timer(sTimer, sThreshold ? dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC) : DISPATCH_TIME_FOREVER,
-                              sThreshold ? NSEC_PER_SEC : DISPATCH_TIME_FOREVER, NSEC_PER_MSEC * 100);
+    PGApply(0);
 }
 
-static void PGSample(void) {
+static void PGApply(unsigned attempt) {
     if (!sThreshold || !sBundle.length) return;
     if (!sPID) {
         for (NSNumber *candidate in MCPidsForIdentifier(sBundle)) {
             pid_t pid = candidate.intValue;
             uint64_t start = 0;
             NSString *path = PGPath(pid);
-            if (path.length && PGUsage(pid, NULL, &start) && [MCBundleIdForPid(pid) isEqualToString:sBundle]) {
+            if (path.length && PGIdentity(pid, &start) && [MCBundleIdForPid(pid) isEqualToString:sBundle]) {
                 sPID = pid; sPath = path; sStart = start; break;
             }
         }
+    }
+    if (!PGSameProcess()) {
+        PGReset();
+        if (attempt < 3) {
+            uint64_t generation = sGeneration;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), sQueue, ^{
+                @autoreleasepool {
+                    if (generation == sGeneration) PGApply(attempt + 1);
+                }
+            });
+        }
         return;
     }
-    uint64_t cpu = 0;
-    if (!PGSameProcess(&cpu)) { PGReset(); return; }
-    if (!sKernelAttempted) {
-        sKernelAttempted = YES;
-        // XNU's CPU monitor percentage is limited to a single core; keep the
-        // process-wide sampler for multi-core thresholds and unsupported PIDs.
-        int (*setMonitor)(int, int, int) = dlsym(RTLD_DEFAULT, "proc_set_cpumon_params_fatal");
-        sDisableCPUMonitor = dlsym(RTLD_DEFAULT, "proc_disable_cpumon");
-        if (sThreshold <= 100 && setMonitor && sDisableCPUMonitor &&
-            setMonitor(sPID, (int)sThreshold, (int)sDuration) == 0) {
-            sKernelActive = YES;
-            dispatch_source_set_timer(sTimer, DISPATCH_TIME_FOREVER, DISPATCH_TIME_FOREVER, 0);
-            os_log(OS_LOG_DEFAULT, "ProcessGuardian: kernel CPU monitor PID %{public}d: %{public}ld%% / %{public}lds", sPID, (long)sThreshold, (long)sDuration);
-            return;
-        }
-        if (sThreshold <= 100 && setMonitor && sDisableCPUMonitor)
-            os_log_error(OS_LOG_DEFAULT, "ProcessGuardian: kernel CPU monitor PID %{public}d failed: %{public}d (%{public}s); using sampler", sPID, errno, strerror(errno));
+    int (*setMonitor)(int, int, int) = dlsym(RTLD_DEFAULT, "proc_set_cpumon_params_fatal");
+    sDisableCPUMonitor = dlsym(RTLD_DEFAULT, "proc_disable_cpumon");
+    if (!setMonitor || !sDisableCPUMonitor) {
+        os_log_error(OS_LOG_DEFAULT, "ProcessGuardian: kernel CPU monitor API unavailable; monitor not enabled");
+        return;
     }
-    uint64_t now = PGNow();
-    if (!sOldWall || now <= sOldWall || cpu < sOldCPU) {
-        sOldWall = now; sOldCPU = cpu; return;
+    if (setMonitor(sPID, (int)sThreshold, (int)sDuration) != 0) {
+        os_log_error(OS_LOG_DEFAULT, "ProcessGuardian: kernel CPU monitor PID %{public}d failed: %{public}d (%{public}s)", sPID, errno, strerror(errno));
+        return;
     }
-    static mach_timebase_info_data_t timebase;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ mach_timebase_info(&timebase); });
-    if (!timebase.denom) return;
-    uint64_t wall = now - sOldWall;
-    double percent = (double)(cpu - sOldCPU) * timebase.numer / timebase.denom * 100.0 / wall;
-    sOldWall = now; sOldCPU = cpu;
-    if (percent < sThreshold) { sExceeding = NO; sExceeded = 0; return; }
-    if (sExceeding) sExceeded += wall;
-    else { sExceeding = YES; sExceeded = 0; }
-    if (sExceeded >= (uint64_t)sDuration * NSEC_PER_SEC && PGSameProcess(NULL) &&
-        [MCBundleIdForPid(sPID) isEqualToString:sBundle]) {
-        // StayAlive receives the real process-death event and may launch a fresh PID.
-        kill(sPID, SIGKILL);
-        PGReset();
-    }
+    sKernelActive = YES;
+    os_log(OS_LOG_DEFAULT, "ProcessGuardian: kernel CPU monitor PID %{public}d: %{public}ld%% / %{public}lds", sPID, (long)sThreshold, (long)sDuration);
 }
 
 void MCCPUGuardFrontmostChanged(NSString *bundleIdentifier) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         sQueue = dispatch_queue_create("com.moxuan.processguardian.cpu", DISPATCH_QUEUE_SERIAL);
-        sTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, sQueue);
-        dispatch_source_set_event_handler(sTimer, ^{ @autoreleasepool { PGSample(); } });
-        dispatch_resume(sTimer);
         notify_register_dispatch(MCApplyLimitsNotification.UTF8String, &sNotifyToken, sQueue, ^(int token) { PGReload(); });
     });
     dispatch_async(sQueue, ^{ sBundle = [bundleIdentifier copy]; PGReload(); });
+}
+
+void MCCPUGuardProcessStarted(void) {
+    if (!sQueue) return;
+    dispatch_async(sQueue, ^{
+        if (!sKernelActive || !PGSameProcess()) PGReload();
+    });
 }

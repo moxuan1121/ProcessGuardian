@@ -167,10 +167,10 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     [limits addObject:[MCEditRow rowWithKind:MCEditRowOption title:@"进程优先级 (Nice)"
                      footer:@"-20 最高优先 到 19 最低优先，默认 0" key:@"NiceValue"]];
     [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"前台 CPU 上限 (%)"
-                     footer:@"0 关闭；2～1000 为 CPU 百分比阈值。100% 约为单个核心满载"
+                     footer:@"0 关闭；内核检测支持 2～100%。100% 约为单个核心满载；旧配置超过 100% 时不会启用检测"
                      key:@"CPUThreshold"]];
-    [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"CPU 超限时间 (秒)"
-                     footer:@"默认 10 秒；内核监控按此时间窗口判定，回退采样按连续超限判定"
+    [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"CPU 检测窗口 (秒)"
+                     footer:@"默认 10 秒；由内核按时间窗口判定。内核设置失败时不启用 CPU 检测"
                      key:@"CPUDuration"]];
 
     self.sections = @[ identity, limits ];
@@ -202,7 +202,7 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     NSScanner *scanner = [NSScanner scannerWithString:text ?: @""];
     NSInteger parsed = 0;
     if ([scanner scanInteger:&parsed] && scanner.isAtEnd) {
-        if ([row.key isEqualToString:@"CPUThreshold"] && parsed != 0 && (parsed < 2 || parsed > 1000)) parsed = 0;
+        if ([row.key isEqualToString:@"CPUThreshold"] && parsed != 0 && (parsed < 2 || parsed > 100)) parsed = 0;
         if ([row.key isEqualToString:@"CPUDuration"] && (parsed < 1 || parsed > 3600)) parsed = 10;
         self.config[row.key] = @(parsed);
     } else {

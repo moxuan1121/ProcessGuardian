@@ -6,9 +6,9 @@ iOS 15–17.3 RootHide 隐根插件：在设置中管理进程的 nice 与 Jetsa
 
 - `ProcessGuardianPrefs.bundle`：设置中的进程列表与单项编辑页，可从候选列表选择应用或系统进程。
 - `processguardiand`：root LaunchDaemon，应用内存与优先级设置；不做高频 CPU 采样。
-- `ProcessGuardian.dylib`：SpringBoard 前台切换探针。前台 CPU 限制优先使用 XNU fatal CPU monitor；设置失败或阈值超过 100% 时回退到原来的每秒采样与 `SIGKILL`。
+- `ProcessGuardian.dylib`：SpringBoard 前台切换探针。前台 CPU 限制仅使用 XNU fatal CPU monitor，支持 2～100% 阈值；接口不可用或设置失败时记录错误并停止此次设置。旧的每秒 CPU 采样、连续超限累计和 `SIGKILL` 回退已删除。切换前台或配置变更时配置内核，启动期间最多补查三次 PID，成功后无需周期采样。
 
-显式内存上限始终为 fatal 限额。CPU 阈值只监控前台应用；100% 约等于单个核心满载。内核监控的时间窗口与回退采样的「连续超限」判定并不完全相同。切出前台时会停用本插件设置的内核监控；XNU 的 fatal 标志在进程存活期间不能清除，因此此分支必须先在 RootHide 真机验证前后台切换及系统 CPU 策略的交互。限额触发退出后，本插件不再自动启动应用。内存与优先级服务每 30 分钟兜底巡检一次；前台变化、应用启动和设置变更会立即触发检查。
+显式内存上限始终为 fatal 限额。CPU 阈值只监控前台应用；100% 约等于单个核心满载。CPU 检测按内核时间窗口判定，窗口默认 10 秒，支持 1～3600 秒。旧配置超过 100% 时不会启用 CPU 检测，需要改为支持的阈值。切出前台时会停用本插件设置的内核监控；XNU 的 fatal 标志在进程存活期间不能清除，因此此分支必须先在 RootHide 真机验证前后台切换及系统 CPU 策略的交互。限额触发退出后，本插件不再自动启动应用。内存与优先级服务每 30 分钟兜底巡检一次；前台变化、应用启动和设置变更会立即触发检查。
 
 从旧版升级后需重新加载 SpringBoard，以卸载内存中的旧保活模块。旧配置中的 `KeepAlive` 和 `RelaunchAfterRespring` 字段会被忽略，现有 CPU、内存和优先级设置继续使用。
 
@@ -22,4 +22,4 @@ Jetsam 配置保留 0～210 的统一档位。iOS 15 写入对应的 0～21 内�
 
 ## 来源与许可
 
-CPU 采样与进程身份复核参考 [CPUOverloadKiller](https://github.com/moxuan1121/CPUOverloadKiller)，按 GPL-3.0 许可使用并作了改动：改为读取统一配置、仅监控前台应用。MemoryControlRe 的重构源码来自本次提供的本地工程；历史版本使用过 StayAliveLite 重构源码，当前已移除其保活模块。本项目按 [GPL-3.0](LICENSE) 发布。
+进程身份复核参考 [CPUOverloadKiller](https://github.com/moxuan1121/CPUOverloadKiller)，按 GPL-3.0 许可使用并作了改动；原 CPU 采样代码现已删除。MemoryControlRe 的重构源码来自本次提供的本地工程；历史版本使用过 StayAliveLite 重构源码，当前已移除其保活模块。本项目按 [GPL-3.0](LICENSE) 发布。
