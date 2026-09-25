@@ -13,6 +13,8 @@
 #import <notify.h>
 #import <sys/stat.h>
 #import <arpa/inet.h>
+#import <errno.h>
+#import <signal.h>
 #import <UIKit/UIKit.h>
 
 // MARK: - 常量
@@ -133,6 +135,7 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
         _startupBlocked   = [NSMutableSet set];
         _autoLaunchPending = [NSMutableSet set];
         _watchedPIDs      = [NSMutableSet set];
+        _deathSources     = [NSMutableDictionary dictionary];
         _lastEligibility  = [NSMutableDictionary dictionary];
         _lastAutoLaunchAt = [NSMutableDictionary dictionary];
         _startupRecoveryQueue = [NSMutableArray array];
@@ -432,6 +435,8 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
     SALiteKVC(application, @"processState");
 
     int pid = [SALiteKVC(application, @"pid") intValue];
+    // SpringBoard can retain a dead PID until another UI event refreshes its cache.
+    if (pid > 0 && kill(pid, 0) == -1 && errno == ESRCH) return 0;
     return pid < 0 ? 0 : pid;
 }
 
@@ -551,6 +556,7 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
 
 - (void)ensureAssertionForBundleIdentifier:(NSString *)bundleIdentifier pid:(pid_t)pid
 {
+    [self subscribeToDeathForBundleIdentifier:bundleIdentifier pid:pid];
     SALiteLoadAssertionFrameworks();
 
     NSNumber *currentPID = self.assertionPIDs[bundleIdentifier];
@@ -591,7 +597,6 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
     if (acquired) {
         self.assertions[bundleIdentifier] = acquired;
         self.assertionPIDs[bundleIdentifier] = @(pid);
-        [self subscribeToDeathForBundleIdentifier:bundleIdentifier pid:pid];
     }
 }
 
@@ -612,25 +617,46 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
     NSNumber *key = @(pid);
     if ([self.watchedPIDs containsObject:key]) return;
 
+    [self.watchedPIDs addObject:key];
+    __weak typeof(self) weakSelf = self;
+    dispatch_source_t source = dispatch_source_create(DISPATCH_SOURCE_TYPE_PROC, (uintptr_t)pid,
+                                                      DISPATCH_PROC_EXIT, dispatch_get_main_queue());
+    if (source) {
+        self.deathSources[key] = source;
+        dispatch_source_set_event_handler(source, ^{
+            __strong typeof(weakSelf) self = weakSelf;
+            [self processDidExitBundleIdentifier:bundleIdentifier pid:pid];
+        });
+        dispatch_resume(source);
+    }
+
     Class identifierClass = NSClassFromString(@"RBSProcessIdentifier");
     Class connectionClass = NSClassFromString(@"RBSConnection");
-    if (!identifierClass || !connectionClass) return;
+    RBSProcessIdentifier *identifier = identifierClass ? [(id)identifierClass identifierWithPid:pid] : nil;
+    RBSConnection *connection = connectionClass ? [(id)connectionClass sharedInstance] : nil;
+    if (identifier && [connection respondsToSelector:@selector(subscribeToProcessDeath:handler:)]) {
+        [connection subscribeToProcessDeath:identifier handler:^{
+            dispatch_async(dispatch_get_main_queue(), ^{
+                __strong typeof(weakSelf) self = weakSelf;
+                [self processDidExitBundleIdentifier:bundleIdentifier pid:pid];
+            });
+        }];
+    } else if (!source) {
+        [self.watchedPIDs removeObject:key];
+    }
+}
 
-    RBSProcessIdentifier *identifier = [(id)identifierClass identifierWithPid:pid];
-    RBSConnection *connection = [(id)connectionClass sharedInstance];
-    if (!identifier || ![connection respondsToSelector:@selector(subscribeToProcessDeath:handler:)]) return;
-
-    [self.watchedPIDs addObject:key];
-
-    __weak typeof(self) weakSelf = self;
-    [connection subscribeToProcessDeath:identifier handler:^{
-        dispatch_async(dispatch_get_main_queue(), ^{
-            __strong typeof(weakSelf) self = weakSelf;
-            if (!self) return;
-            [self.watchedPIDs removeObject:key];
-            [self handleDeathForBundleIdentifier:bundleIdentifier pid:pid];
-        });
-    }];
+- (void)processDidExitBundleIdentifier:(NSString *)bundleIdentifier pid:(pid_t)pid
+{
+    NSNumber *key = @(pid);
+    if (![self.watchedPIDs containsObject:key]) return;
+    [self.watchedPIDs removeObject:key];
+    dispatch_source_t source = self.deathSources[key];
+    if (source) {
+        dispatch_source_cancel(source);
+        [self.deathSources removeObjectForKey:key];
+    }
+    [self handleDeathForBundleIdentifier:bundleIdentifier pid:pid];
 }
 
 - (void)handleDeathForBundleIdentifier:(NSString *)bundleIdentifier pid:(pid_t)pid
