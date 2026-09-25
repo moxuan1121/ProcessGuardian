@@ -13,6 +13,7 @@ extern NSString *const MCDomain;
 extern NSString *const MCApplyLimitsNotification;
 extern NSString *const MCProcessChangedNotification;
 extern NSString *const MCCPUFrontmostNotification;
+extern NSString *const MCStatusChangedNotification;
 /** 状态回写文件（偏好面板读取以显示 PID）。 */
 extern NSString *const MCStatusFileName;
 /** 守护进程日志文件名，位于 MobileSupport 或 jbroot 下的 Library/Logs。 */
@@ -59,7 +60,7 @@ extern const double  MCDefaultLogSizeLimitMB;   /* 2 MB  */
 /** 读取整个偏好字典。 */
 + (NSDictionary *)readPreferences;
 + (NSDictionary *)readStatus;
-+ (void)writeStatus:(NSDictionary *)status;
++ (BOOL)writeStatus:(NSDictionary *)status;
 
 /** AppConfigs -> { key : MCProcessConfig } */
 + (NSDictionary<NSString *, MCProcessConfig *> *)parsedAppConfigs;

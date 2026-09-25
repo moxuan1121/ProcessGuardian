@@ -55,15 +55,14 @@ static void MCLog(NSString *format, ...) {
             /* 面板以 mobile 身份运行，「清空日志」要能截断这个文件，所以权限放到位。 */
             fchmod(fd, 0666);
             struct stat st;
+            const char *utf8 = line.UTF8String;
             if (fstat(fd, &st) == 0 && sLogSizeLimitMB > 0 &&
-                (double)st.st_size > sLogSizeLimitMB * 1024.0 * 1024.0) {
-                ftruncate(fd, 0);
-                lseek(fd, 0, SEEK_SET);
+                (double)st.st_size + strlen(utf8) + 1 > sLogSizeLimitMB * 1024.0 * 1024.0 &&
+                ftruncate(fd, 0) == 0) {
                 NSString *rot = [NSString stringWithFormat:@"[%@] [守护] 日志大小超过设定限制(%.1fMB)，已自动清空。\n",
                                  [MCCommon timestampString], sLogSizeLimitMB];
                 ssize_t w = write(fd, rot.UTF8String, strlen(rot.UTF8String)); (void)w;
             }
-            const char *utf8 = line.UTF8String;
             ssize_t w1 = write(fd, utf8, strlen(utf8)); (void)w1;
             ssize_t w2 = write(fd, "\n", 1); (void)w2;
             close(fd);
@@ -82,6 +81,7 @@ static void MCLog(NSString *format, ...) {
  */
 static NSMutableDictionary<NSString *, NSDictionary *> *sApplied;
 static BOOL MCReadKernelPriority(pid_t pid, int32_t *priority);
+static int32_t MCTargetJetsamPriority(NSInteger configured);
 static void MCUpdateCPUTimer(void);
 static void MCScheduleJetsamRecheck(NSString *key, NSDictionary *record);
 
@@ -109,6 +109,7 @@ static void MCRememberKey(NSString *key, pid_t pid, MCProcessConfig *cfg, NSInte
 static void MCPublishStatus(BOOL enabled, NSDictionary *configs, NSDictionary *pidSnapshot) {
     NSMutableDictionary *processes = [NSMutableDictionary dictionary];
     for (NSString *key in configs) {
+        MCProcessConfig *cfg = configs[key];
         NSMutableDictionary *entry = [sApplied[key] mutableCopy];
         if (!entry) {
             pid_t pid = [[pidSnapshot[key] firstObject] intValue];
@@ -117,18 +118,24 @@ static void MCPublishStatus(BOOL enabled, NSDictionary *configs, NSDictionary *p
         }
         pid_t pid = [entry[@"pid"] intValue];
         int32_t priority = 0;
-        if (pid > 0 && MCReadKernelPriority(pid, &priority)) entry[@"ActualJetsam"] = @(priority);
+        BOOL hasPriority = pid > 0 && MCReadKernelPriority(pid, &priority);
+        if (hasPriority) entry[@"ActualJetsam"] = @(priority);
+        if (cfg.jetsamPriority > 0) {
+            int32_t target = MCTargetJetsamPriority(cfg.jetsamPriority);
+            entry[@"JetsamState"] = !hasPriority ? @"读取失败" : priority == target ? @"已生效" :
+                [entry[@"jetsamFlags"] integerValue] < 0 ? @"写入失败" : @"未达目标";
+        }
         errno = 0;
         int nice = pid > 0 ? getpriority(PRIO_PROCESS, pid) : 0;
         if (pid > 0 && errno == 0) entry[@"ActualNice"] = @(nice);
         processes[key] = entry;
     }
-    [MCCommon writeStatus:@{
+    if ([MCCommon writeStatus:@{
         @"Enabled":     @(enabled),
         @"PID":         @((int)getpid()),
         @"LastUpdate":  [MCCommon timestampString],
         @"Processes":   processes,
-    }];
+    }]) notify_post(MCStatusChangedNotification.UTF8String);
 }
 
 /* ------------------------------------------------------------ 内核调用封装 */
@@ -452,6 +459,10 @@ static void MCScheduleJetsamRecheck(NSString *key, NSDictionary *record) {
                 updated[@"jetsamFlags"] = @(flags);
                 sApplied[key] = updated;
             }
+            NSDictionary *prefs = [MCCommon readPreferences];
+            NSDictionary *configs = [MCCommon parsedAppConfigsFromPreferences:prefs];
+            MCPublishStatus([prefs[@"Enabled"] boolValue], configs,
+                            MCPidsForIdentifiers(configs.allKeys));
         }
     });
 }

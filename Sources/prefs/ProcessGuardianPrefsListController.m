@@ -14,6 +14,7 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
 
 @interface ProcessGuardianPrefsListController () <UIDocumentPickerDelegate, UISearchResultsUpdating>
 @property (nonatomic, strong) UISearchController *processSearch;
+@property (nonatomic, assign) int statusToken;
 @end
 
 @implementation ProcessGuardianPrefsListController
@@ -100,8 +101,11 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
 }
 
 - (void)clearLog {
-    [@"" writeToFile:[MCCommon logFilePath] atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    [self alertWithMessage:@"日志已清空！"];
+    NSError *error = nil;
+    BOOL cleared = [@"" writeToFile:[MCCommon logFilePath] atomically:NO
+                           encoding:NSUTF8StringEncoding error:&error];
+    [self alertWithMessage:cleared ? @"日志已清空" :
+        [NSString stringWithFormat:@"清空失败：%@", error.localizedDescription ?: @"无法写入日志文件"]];
 }
 
 /** 用按钮 + 动作面板选择日志限额。 */
@@ -247,6 +251,24 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
     self.navigationItem.searchController = self.processSearch;
     self.navigationItem.hidesSearchBarWhenScrolling = YES;
     self.navigationItem.rightBarButtonItem = nil;
+    __weak typeof(self) ws = self;
+    if (notify_register_dispatch(MCStatusChangedNotification.UTF8String, &_statusToken,
+                                 dispatch_get_main_queue(), ^(int token) {
+        if (ws.isViewLoaded && ws.view.window) [ws refreshProcessList];
+    }) != NOTIFY_STATUS_OK) _statusToken = 0;
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(preferencesDidBecomeActive:)
+        name:UIApplicationDidBecomeActiveNotification object:nil];
+}
+
+- (void)dealloc {
+    if (_statusToken) notify_cancel(_statusToken);
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)preferencesDidBecomeActive:(NSNotification *)notification {
+    if (!self.isViewLoaded || !self.view.window) return;
+    [self refreshProcessList];
+    notify_post(MCApplyLimitsNotification.UTF8String);
 }
 
 - (void)viewWillAppear:(BOOL)animated {

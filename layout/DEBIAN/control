@@ -1,6 +1,6 @@
 Package: com.moxuan.processguardian
 Name: ProcessGuardian
-Version: 0.1.27~jetsam
+Version: 0.1.28~status
 Architecture: iphoneos-arm64e
 Description: iOS process priority, memory limits and adaptive CPU monitoring
 Maintainer: moxuan1121

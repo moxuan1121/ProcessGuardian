@@ -83,6 +83,8 @@ int main(void) {
     enumerations = pathReads = 0;
     MCRunSweep(NO);
     assert(enumerations == 1 && priorityWrites == 1 && sApplied.count == 1);
+    NSDictionary *shown = [MCCommon readStatus][@"Processes"][@"com.example.app"];
+    assert([shown[@"JetsamState"] isEqual:@"已生效"] && [shown[@"ActualJetsam"] intValue] == 150);
     MCRunSweep(NO);
     assert(enumerations == 2 && priorityWrites == 1); // Unchanged target is not rewritten.
     assert(([@{@"Enabled": @YES, @"AppConfigs": @{@"com.example.app": @{@"JetsamPriority": @-1}}}
@@ -94,6 +96,10 @@ int main(void) {
     previous = enumerations;
     MCRunSweep(NO);
     assert(enumerations == previous); // Disabled/unchanged events do no process scan.
+    sLogSizeLimitMB = 0.0001;
+    MCLog(@"A log entry longer than the configured limit must rotate the file before append.");
+    NSString *rotated = [NSString stringWithContentsOfFile:sLogFile encoding:NSUTF8StringEncoding error:nil];
+    assert([rotated containsString:@"已自动清空"]);
     assert([fm removeItemAtPath:root error:nil]);
     puts("Runtime checks passed: batch lookup equivalence, fresh snapshots, sweep reuse, reset and disabled idle");
   }

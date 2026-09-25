@@ -119,9 +119,10 @@ NSArray<NSString *> *MCPriorityNames(void) {
 
 + (NSString *)subtitleForConfig:(NSDictionary *)cfg pid:(pid_t)pid status:(NSDictionary *)status {
     NSString *actualPriority = @"?", *actualNice = @"?";
+    BOOL samePid = NO;
     if (pid > 0) {
         if (![status isKindOfClass:[NSDictionary class]]) status = nil;
-        BOOL samePid = [status[@"pid"] intValue] == pid;
+        samePid = [status[@"pid"] intValue] == pid;
         if (samePid && [status[@"ActualJetsam"] isKindOfClass:[NSNumber class]])
             actualPriority = [status[@"ActualJetsam"] stringValue];
         errno = 0;
@@ -131,8 +132,13 @@ NSArray<NSString *> *MCPriorityNames(void) {
             actualNice = [status[@"ActualNice"] stringValue];
     }
     NSInteger configuredPriority = cfg[@"JetsamPriority"] ? [cfg[@"JetsamPriority"] integerValue] : -1;
-    return [NSString stringWithFormat:@"p=%@、n=%@、pid=%@\np=%ld、a=%ld、i=%ld、n=%ld",
-        actualPriority, actualNice, pid ? [@(pid) stringValue] : @"?",
+    NSString *state = samePid && [status[@"JetsamState"] isKindOfClass:NSString.class] &&
+        [status[@"cfg"][@"JetsamPriority"] integerValue] == configuredPriority
+        ? status[@"JetsamState"] : @"等待更新";
+    NSString *jetsamState = pid > 0 && configuredPriority > 0
+        ? [NSString stringWithFormat:@"（%@）", state] : @"";
+    return [NSString stringWithFormat:@"p=%@%@、n=%@、pid=%@\np=%ld、a=%ld、i=%ld、n=%ld",
+        actualPriority, jetsamState, actualNice, pid ? [@(pid) stringValue] : @"?",
         (long)configuredPriority, (long)[cfg[@"MemLimitActive"] integerValue],
         (long)[cfg[@"MemLimitInactive"] integerValue], (long)[cfg[@"NiceValue"] integerValue]];
 }

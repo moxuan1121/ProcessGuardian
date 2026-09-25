@@ -9,6 +9,7 @@ NSString *const MCDomain                 = @"com.moxuan.processguardian";
 NSString *const MCApplyLimitsNotification = @"com.moxuan.processguardian/ApplyLimits";
 NSString *const MCProcessChangedNotification = @"com.moxuan.processguardian/ProcessChanged";
 NSString *const MCCPUFrontmostNotification = @"com.moxuan.processguardian/CPUFrontmost";
+NSString *const MCStatusChangedNotification = @"com.moxuan.processguardian/StatusChanged";
 NSString *const MCStatusFileName          = @"com.moxuan.processguardian.status.plist";
 NSString *const MCLogFileName             = @"ProcessGuardian.log";
 
@@ -149,8 +150,8 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
     return [d isKindOfClass:[NSDictionary class]] ? d : @{};
 }
 
-+ (void)writeStatus:(NSDictionary *)status {
-    [(status ?: @{}) writeToFile:[self statusPlistPath] atomically:YES];
++ (BOOL)writeStatus:(NSDictionary *)status {
+    return [(status ?: @{}) writeToFile:[self statusPlistPath] atomically:YES];
 }
 
 + (NSDictionary<NSString *, MCProcessConfig *> *)parsedAppConfigs {
