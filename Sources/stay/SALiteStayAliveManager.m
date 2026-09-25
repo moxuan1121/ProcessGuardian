@@ -15,7 +15,11 @@
 #import <arpa/inet.h>
 #import <errno.h>
 #import <signal.h>
+#import <fcntl.h>
+#import <unistd.h>
+#import <string.h>
 #import <UIKit/UIKit.h>
+#import "../libproc/libproc_internal.h"
 
 // MARK: - 常量
 
@@ -38,6 +42,18 @@ static const double  SALiteBoundaryEpsilon    = 0.5;                     // 边�
 
 static const NSInteger SALiteTimerLease       = 0x77359400;              // 2s，纳秒
 static const NSInteger SALiteDefaultCrashWake = 60;                      // 崩溃唤醒间隔兜底（秒）
+
+static void SALiteLog(NSString *message)
+{
+    NSString *path = [SALiteConfig sharedPathForPath:@"/var/mobile/Library/Logs/ProcessGuardian.log"];
+    NSString *line = [NSString stringWithFormat:@"[%@] [后台守护] %@\n", [NSDate date], message];
+    int fd = open(path.fileSystemRepresentation, O_WRONLY | O_CREAT | O_APPEND, 0666);
+    if (fd >= 0) {
+        const char *bytes = line.UTF8String;
+        write(fd, bytes, strlen(bytes));
+        close(fd);
+    }
+}
 
 /// 拉起后补挂断言的轮询时刻
 static NSArray<NSNumber *> *SALiteLaunchRetryDelays(void)
@@ -437,6 +453,9 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
     int pid = [SALiteKVC(application, @"pid") intValue];
     // SpringBoard can retain a dead PID until another UI event refreshes its cache.
     if (pid > 0 && kill(pid, 0) == -1 && errno == ESRCH) return 0;
+    struct vdt_proc_bsdinfo info = {0};
+    if (pid > 0 && proc_pidinfo(pid, VDT_PROC_PIDTBSDINFO, 0, &info, sizeof(info)) == sizeof(info)
+        && info.pbi_status == 5) return 0; // Darwin SZOMB
     return pid < 0 ? 0 : pid;
 }
 
@@ -644,12 +663,15 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
     } else if (!source) {
         [self.watchedPIDs removeObject:key];
     }
+    SALiteLog([NSString stringWithFormat:@"监听 %@ PID:%d proc:%@ RBS:%@", bundleIdentifier, pid,
+               source ? @"是" : @"否", identifier && connection ? @"是" : @"否"]);
 }
 
 - (void)processDidExitBundleIdentifier:(NSString *)bundleIdentifier pid:(pid_t)pid
 {
     NSNumber *key = @(pid);
     if (![self.watchedPIDs containsObject:key]) return;
+    SALiteLog([NSString stringWithFormat:@"退出通知 %@ PID:%d", bundleIdentifier, pid]);
     [self.watchedPIDs removeObject:key];
     dispatch_source_t source = self.deathSources[key];
     if (source) {
@@ -664,10 +686,16 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
     if ([self.assertionPIDs[bundleIdentifier] intValue] == pid) {
         [self releaseAssertionForBundleIdentifier:bundleIdentifier];
     }
-    if ([self.userBlocked containsObject:bundleIdentifier]) return;
+    if ([self.userBlocked containsObject:bundleIdentifier]) {
+        SALiteLog([NSString stringWithFormat:@"跳过拉起 %@：用户已屏蔽", bundleIdentifier]);
+        return;
+    }
 
     NSDictionary *policy = [SALiteConfig policyForBundleIdentifier:bundleIdentifier];
-    if (![self isPolicyEligible:policy]) return;
+    if (![self isPolicyEligible:policy]) {
+        SALiteLog([NSString stringWithFormat:@"跳过拉起 %@：配置未启用或条件不满足", bundleIdentifier]);
+        return;
+    }
 
     if (![policy[@"relaunchOnCrash"] boolValue]) {
         [self.crashBlocked addObject:bundleIdentifier];
@@ -687,13 +715,19 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
     }
 
     __weak typeof(self) weakSelf = self;
+    SALiteLog([NSString stringWithFormat:@"计划拉起 %@ 延迟:%.1f秒", bundleIdentifier,
+               (double)delay / NSEC_PER_SEC]);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, delay), dispatch_get_main_queue(), ^{
         __strong typeof(weakSelf) self = weakSelf;
         if ([self.userBlocked containsObject:bundleIdentifier]) return;
 
         NSDictionary *current = [SALiteConfig policyForBundleIdentifier:bundleIdentifier];
-        if ([self isPolicyEligible:current] && [self pidForBundleIdentifier:bundleIdentifier] <= 0) {
+        pid_t currentPID = [self pidForBundleIdentifier:bundleIdentifier];
+        // The exit notification identifies a dead process even when SpringBoard still caches its PID.
+        if ([self isPolicyEligible:current] && (currentPID <= 0 || currentPID == pid)) {
             [self launchBundleIdentifierInBackground:bundleIdentifier];
+        } else {
+            SALiteLog([NSString stringWithFormat:@"取消拉起 %@ 当前PID:%d", bundleIdentifier, currentPID]);
         }
     });
 }
@@ -707,6 +741,7 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
     if ([self.userBlocked containsObject:bundleIdentifier]) return;
 
     [self.autoLaunchPending addObject:bundleIdentifier];
+    SALiteLog([NSString stringWithFormat:@"请求后台拉起 %@", bundleIdentifier]);
     self.lastAutoLaunchAt[bundleIdentifier] = @([NSDate date].timeIntervalSince1970);
 
     BOOL launched = NO;
@@ -730,11 +765,14 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
             FBSSystemService *service = [(id)serviceClass sharedService];
             if ([service respondsToSelector:@selector(openApplication:options:withResult:)]) {
                 [service openApplication:bundleIdentifier options:options withResult:^(NSError *error) {
+                    if (error) SALiteLog([NSString stringWithFormat:@"拉起失败 %@：%@", bundleIdentifier, error]);
                 }];
             } else {
+                SALiteLog([NSString stringWithFormat:@"拉起失败 %@：FBS 接口不可用", bundleIdentifier]);
                 [self.autoLaunchPending removeObject:bundleIdentifier];
             }
         } else {
+            SALiteLog([NSString stringWithFormat:@"拉起失败 %@：启动框架不可用", bundleIdentifier]);
             [self.autoLaunchPending removeObject:bundleIdentifier];
         }
     }
@@ -798,7 +836,10 @@ static void SALiteReachabilityCallback(SCNetworkReachabilityRef target,
     if (bundleIdentifier.length == 0) return;
 
     BOOL wasPending = [self.autoLaunchPending containsObject:bundleIdentifier];
-    if (wasPending) [self.autoLaunchPending removeObject:bundleIdentifier];
+    if (wasPending) {
+        SALiteLog([NSString stringWithFormat:@"已启动 %@", bundleIdentifier]);
+        [self.autoLaunchPending removeObject:bundleIdentifier];
+    }
     [self.startupBlocked removeObject:bundleIdentifier];
 
     __weak typeof(self) weakSelf = self;
