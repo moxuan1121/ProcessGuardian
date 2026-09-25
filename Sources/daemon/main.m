@@ -25,6 +25,8 @@
 #import <errno.h>
 #import <string.h>
 #import <signal.h>
+#import <libproc.h>
+#import <libproc_internal.h>
 
 #import "../MCCommon.h"
 #import "../MCCPUGuard.h"
@@ -81,14 +83,26 @@ static void MCLog(NSString *format, ...) {
 static NSMutableDictionary<NSString *, NSDictionary *> *sApplied;
 static BOOL MCReadKernelPriority(pid_t pid, int32_t *priority);
 static void MCUpdateCPUTimer(void);
+static void MCScheduleJetsamRecheck(NSString *key, NSDictionary *record);
 
 static void MCForgetKey(NSString *key) {
     [sApplied removeObjectForKey:key];
 }
 
-static void MCRememberKey(NSString *key, pid_t pid, MCProcessConfig *cfg) {
+static NSDictionary *MCProcessIdentity(pid_t pid) {
+    struct vdt_proc_bsdinfo info = {0};
+    char path[PROC_PIDPATHINFO_MAXSIZE] = {0};
+    if (proc_pidinfo(pid, VDT_PROC_PIDTBSDINFO, 0, &info, sizeof(info)) != sizeof(info) ||
+        proc_pidpath(pid, path, sizeof(path)) <= 0) return nil;
+    return @{@"path": @(path), @"seconds": @(info.pbi_start_tvsec),
+             @"micros": @(info.pbi_start_tvusec)};
+}
+
+static void MCRememberKey(NSString *key, pid_t pid, MCProcessConfig *cfg, NSInteger jetsamFlags) {
     sApplied[key] = @{ @"pid": @(pid),
                        @"name": MCProcessNameForPid(pid) ?: key,
+                       @"identity": MCProcessIdentity(pid) ?: @{},
+                       @"jetsamFlags": @(jetsamFlags),
                        @"cfg": [cfg dictionaryValue] };
 }
 
@@ -143,8 +157,9 @@ static BOOL MCReadKernelPriority(pid_t pid, int32_t *priority) {
  * 把一个进程交还系统。用于「开关关闭」「配置里移除该进程」两种场景。
  * 只撤销当时确实开过的开关 —— 所以依赖 sApplied 里存的 cfg 快照。
  */
-static void MCRestoreProcess(MCProcessConfig *cfg, pid_t pid) {
+static BOOL MCRestoreProcess(MCProcessConfig *cfg, pid_t pid, NSInteger jetsamFlags) {
     MCLog(@"[恢复] 目标: %@ PID: %d", cfg.key, pid);
+    BOOL restored = YES;
 
     if (cfg.memLimitActive || cfg.memLimitInactive) {
         memorystatus_memlimit_properties_t ml = {
@@ -155,7 +170,12 @@ static void MCRestoreProcess(MCProcessConfig *cfg, pid_t pid) {
     }
     if (cfg.jetsamPriority != -1) {
         memorystatus_priority_properties_t pp = {0};
-        memorystatus_control(MEMORYSTATUS_CMD_SET_PRIORITY_PROPERTIES, pid, 0, &pp, sizeof(pp));
+        if (jetsamFlags >= 0 &&
+            memorystatus_control(MEMORYSTATUS_CMD_SET_PRIORITY_PROPERTIES, pid,
+                                 (uint32_t)jetsamFlags, &pp, sizeof(pp)) != 0) {
+            MCLog(@"[恢复] 内存优先级撤销失败 PID:%d 槽位:%ld errno:%d", pid, (long)jetsamFlags, errno);
+            restored = NO;
+        }
         if (cfg.jetsamPriority > 0) {
             memorystatus_control(MEMORYSTATUS_CMD_ELEVATED_INACTIVEJETSAMPRIORITY_DISABLE, pid, 0, NULL, 0);
             memorystatus_control(MEMORYSTATUS_CMD_SET_PROCESS_IS_FREEZABLE, pid, 1, NULL, 0);
@@ -163,7 +183,8 @@ static void MCRestoreProcess(MCProcessConfig *cfg, pid_t pid) {
     }
 
     if (cfg.niceValue != 0) setpriority(PRIO_PROCESS, pid, 0);
-    MCLog(@"[内核] ：已被系统恢复");
+    if (restored) MCLog(@"[恢复] 已撤销本次写入的优先级");
+    return restored;
 }
 
 /* ------------------------------------------------------------------ 应用 */
@@ -205,10 +226,10 @@ static void MCApplyMemLimits(MCProcessConfig *cfg, pid_t pid) {
 }
 
 /* jetsam 优先级。-1=不动，0=交还系统接管，其余=强设。 */
-static void MCApplyJetsamPriority(MCProcessConfig *cfg, pid_t pid) {
+static NSInteger MCApplyJetsamPriority(MCProcessConfig *cfg, pid_t pid) {
     if (cfg.jetsamPriority == -1) {
         MCLog(@"[内存优先级] 目标:-1 -> 未设置, 跳过");
-        return;
+        return -1;
     }
     if (cfg.jetsamPriority == 0)
         MCLog(@"[内存优先级] 目标:0 -> [恢复默认, 系统接管]");
@@ -216,24 +237,31 @@ static void MCApplyJetsamPriority(MCProcessConfig *cfg, pid_t pid) {
     int32_t target = MCTargetJetsamPriority(cfg.jetsamPriority);
     if (target < 0) {
         MCLog(@"[内存优先级] 无效配置 PID:%d 配置:%ld，未写入", pid, (long)cfg.jetsamPriority);
-        return;
+        return -1;
     }
     if (target != cfg.jetsamPriority)
         MCLog(@"[内存优先级] 档位转换 PID:%d 配置:%ld -> 内核目标:%d", pid, (long)cfg.jetsamPriority, target);
     memorystatus_priority_properties_t pp = { .priority = target };
-    int err = memorystatus_control(MEMORYSTATUS_CMD_SET_PRIORITY_PROPERTIES, pid, 0,
+    uint32_t flags = MEMORYSTATUS_SET_PRIORITY_ASSERTION;
+    int err = memorystatus_control(MEMORYSTATUS_CMD_SET_PRIORITY_PROPERTIES, pid, flags,
                                    &pp, sizeof(pp));
+    if (err != 0 && errno == EPERM) {
+        flags = 0; // XNU only accepts assertion writes for managed processes.
+        err = memorystatus_control(MEMORYSTATUS_CMD_SET_PRIORITY_PROPERTIES, pid, flags,
+                                   &pp, sizeof(pp));
+        if (err == 0) MCLog(@"[内存优先级] PID:%d assertion 槽不可用，已使用常规优先级槽位", pid);
+    }
     if (err != 0) {
         int error = errno;
         MCLog(@"[内存优先级] 写入失败 PID:%d 目标:%d 返回:%d errno:%d (%s)",
               pid, pp.priority, err, error, strerror(error));
-        return;
+        return -1;
     }
 
     int32_t actual = 0;
     if (!MCReadKernelPriority(pid, &actual)) {
         MCLog(@"[内存优先级] 写入已接受，但回读失败，无法确认生效 PID:%d", pid);
-        return;
+        return flags;
     }
     if (actual != pp.priority) {
         MCLog(@"[内存优先级] 回读不一致 PID:%d 目标:%d 实际:%d（内核策略或系统断言影响）",
@@ -241,6 +269,7 @@ static void MCApplyJetsamPriority(MCProcessConfig *cfg, pid_t pid) {
     } else {
         MCLog(@"[内存优先级] 写入并回读一致 PID:%d 目标:%d 实际:%d", pid, pp.priority, actual);
     }
+    return flags;
 }
 
 /* nice 值。先读当前值，已经是目标值就不重复设置。 */
@@ -277,11 +306,12 @@ static void MCApplyElevatedInactive(MCProcessConfig *cfg, pid_t pid) {
     memorystatus_control(MEMORYSTATUS_CMD_SET_PROCESS_IS_FREEZABLE, pid, 0, NULL, 0);
 }
 
-static void MCApplyOne(MCProcessConfig *cfg, pid_t pid) {
+static NSInteger MCApplyOne(MCProcessConfig *cfg, pid_t pid) {
     MCApplyMemLimits(cfg, pid);
-    MCApplyJetsamPriority(cfg, pid);
+    NSInteger jetsamFlags = MCApplyJetsamPriority(cfg, pid);
     MCApplyNice(cfg, pid);
     MCApplyElevatedInactive(cfg, pid);
+    return jetsamFlags;
 }
 
 /* ------------------------------------------------------------------ 主扫描 */
@@ -322,19 +352,23 @@ static void MCRunSweep(BOOL force) {
     if (!enabled) {
         for (NSString *key in [sApplied allKeys]) {
             pid_t pid = [sApplied[key][@"pid"] intValue];
-            if (pid > 0 && [pidSnapshot[key] containsObject:@(pid)]) MCRestoreProcess(MCSnapshotConfigFor(key), pid);
+            if (pid > 0 && [pidSnapshot[key] containsObject:@(pid)] &&
+                !MCRestoreProcess(MCSnapshotConfigFor(key), pid,
+                                  [sApplied[key][@"jetsamFlags"] integerValue])) continue;
             MCForgetKey(key);
         }
         MCPublishStatus(NO, configs, pidSnapshot);
-        MCLog(@"[配置] 生效开关已关闭，已挂起守护进程并还原默认状态");
+        MCLog(@"[配置] 生效开关已关闭，恢复待重试:%lu", (unsigned long)sApplied.count);
         return;
     }
 
     for (NSString *key in [sApplied allKeys]) {
         if (configs[key]) continue;
         pid_t pid = [sApplied[key][@"pid"] intValue];
-        MCLog(@"[配置] 已有进程从列表移除，已恢复默认");
-        if (pid > 0 && [pidSnapshot[key] containsObject:@(pid)]) MCRestoreProcess(MCSnapshotConfigFor(key), pid);
+        MCLog(@"[配置] 进程 %@ 已从列表移除，开始恢复", key);
+        if (pid > 0 && [pidSnapshot[key] containsObject:@(pid)] &&
+            !MCRestoreProcess(MCSnapshotConfigFor(key), pid,
+                              [sApplied[key][@"jetsamFlags"] integerValue])) continue;
         MCForgetKey(key);
     }
 
@@ -343,7 +377,9 @@ static void MCRunSweep(BOOL force) {
         NSArray<NSNumber *> *pids = pidSnapshot[key] ?: @[];
         NSNumber *tracked = sApplied[key][@"pid"];
         if (![cfg hasAnythingToApply]) {
-            if (tracked && [pids containsObject:tracked]) MCRestoreProcess(MCSnapshotConfigFor(key), tracked.intValue);
+            if (tracked && [pids containsObject:tracked] &&
+                !MCRestoreProcess(MCSnapshotConfigFor(key), tracked.intValue,
+                                  [sApplied[key][@"jetsamFlags"] integerValue])) continue;
             MCForgetKey(key);
             continue;
         }
@@ -371,13 +407,17 @@ static void MCRunSweep(BOOL force) {
         if (tracked.intValue == pid) {
             MCProcessConfig *previous = MCSnapshotConfigFor(key);
             if ((previous.niceValue && !cfg.niceValue) ||
-                (previous.jetsamPriority != -1 && cfg.jetsamPriority == -1) ||
+                (previous.jetsamPriority != -1 && previous.jetsamPriority != cfg.jetsamPriority) ||
                 (previous.memLimitActive && !cfg.memLimitActive) ||
-                (previous.memLimitInactive && !cfg.memLimitInactive)) MCRestoreProcess(previous, pid);
+                (previous.memLimitInactive && !cfg.memLimitInactive))
+                if (!MCRestoreProcess(previous, pid,
+                                      [sApplied[key][@"jetsamFlags"] integerValue])) continue;
         }
         MCLog(@"[守护] 目标: %@ | PID: %d", key, pid);
-        MCApplyOne(cfg, pid);
-        MCRememberKey(key, pid, cfg);
+        NSInteger jetsamFlags = MCApplyOne(cfg, pid);
+        MCRememberKey(key, pid, cfg, jetsamFlags);
+        if (jetsamFlags >= 0 && cfg.jetsamPriority > 0)
+            MCScheduleJetsamRecheck(key, sApplied[key]);
         MCLog(@"[守护] %@ PID:%d 完成", key, pid);
     }
 
@@ -393,6 +433,28 @@ static dispatch_source_t sLaunchdForkSource;
 static dispatch_source_t sTerminationSource;
 static BOOL sSweepPending;
 static dispatch_source_t sCPUTimer;
+
+/* One delayed readback per application. The record and process identity invalidate stale callbacks. */
+static void MCScheduleJetsamRecheck(NSString *key, NSDictionary *record) {
+    if (![record[@"identity"] count]) return;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC), sWorkerQueue, ^{
+        @autoreleasepool {
+            if (sApplied[key] != record) return;
+            pid_t pid = [record[@"pid"] intValue];
+            if (![record[@"identity"] isEqual:MCProcessIdentity(pid)]) return;
+            MCProcessConfig *cfg = [MCProcessConfig configWithDictionary:record[@"cfg"] key:key];
+            int32_t actual = 0, target = MCTargetJetsamPriority(cfg.jetsamPriority);
+            if (target < 0 || !MCReadKernelPriority(pid, &actual) || actual == target) return;
+            MCLog(@"[内存优先级] 延时回读发现覆盖 PID:%d 目标:%d 实际:%d，重新写入", pid, target, actual);
+            NSInteger flags = MCApplyJetsamPriority(cfg, pid);
+            if (flags >= 0 && flags != [record[@"jetsamFlags"] integerValue]) {
+                NSMutableDictionary *updated = [record mutableCopy];
+                updated[@"jetsamFlags"] = @(flags);
+                sApplied[key] = updated;
+            }
+        }
+    });
+}
 
 static void MCUpdateCPUTimer(void) {
     if (!sCPUTimer) return;
