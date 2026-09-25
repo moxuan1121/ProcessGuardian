@@ -14,7 +14,6 @@
 #import <objc/message.h>
 #import <os/log.h>
 #import <UIKit/UIKit.h>
-#import "MCCPUGuard.h"
 
 static NSString *const kApplyLimitsNotification = @"com.moxuan.processguardian/ProcessChanged";
 
@@ -26,23 +25,12 @@ static MCFrontDisplayChangedIMP sOriginalProcessLaunchIMP;
 
 static void MC_applicationProcessDidLaunch(id self, SEL cmd, id process) {
     if (sOriginalProcessLaunchIMP) sOriginalProcessLaunchIMP(self, cmd, process);
-    MCCPUGuardProcessStarted();
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
         (__bridge CFStringRef)kApplyLimitsNotification, NULL, NULL, true);
 }
 
-static NSString *MCFrontmostBundle(void) {
-    id app = UIApplication.sharedApplication;
-    SEL front = sel_registerName("_accessibilityFrontMostApplication");
-    if (![app respondsToSelector:front]) return nil;
-    id current = ((id (*)(id, SEL))objc_msgSend)(app, front);
-    SEL identifier = sel_registerName("bundleIdentifier");
-    return [current respondsToSelector:identifier] ? ((id (*)(id, SEL))objc_msgSend)(current, identifier) : nil;
-}
-
 static void MC_frontDisplayDidChange(id self, SEL _cmd, id display) {
     if (sOriginalIMP) sOriginalIMP(self, _cmd, display);
-    MCCPUGuardFrontmostChanged(MCFrontmostBundle());
 
     /* 只发一个纯信号，不带 payload：读配置、算 PID、下内核调用全在守护进程里。 */
     CFNotificationCenterPostNotification(
@@ -78,6 +66,5 @@ __attribute__((constructor))
 static void MCTweakMain(void) {
     @autoreleasepool {
         MCInstall();
-        dispatch_async(dispatch_get_main_queue(), ^{ MCCPUGuardFrontmostChanged(MCFrontmostBundle()); });
     }
 }

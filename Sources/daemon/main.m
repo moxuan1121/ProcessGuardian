@@ -24,8 +24,10 @@
 #import <pwd.h>
 #import <errno.h>
 #import <string.h>
+#import <signal.h>
 
 #import "../MCCommon.h"
+#import "../MCCPUGuard.h"
 
 /* ------------------------------------------------------------------ 日志 */
 
@@ -302,12 +304,18 @@ static void MCRunSweep(BOOL force) {
     NSNumber *limit = prefs[@"LogSizeLimit"];
     if ([limit isKindOfClass:NSNumber.class] && limit.doubleValue > 0) sLogSizeLimitMB = limit.doubleValue;
     static NSDictionary *lastDisabledPreferences;
+    if (!enabled) MCCPUGuardUpdate(@{}, @{}, NO, ^(NSString *message) { MCLog(@"%@", message); });
     if (!enabled && !force && !sApplied.count && [lastDisabledPreferences isEqual:prefs]) return;
     lastDisabledPreferences = enabled ? nil : prefs;
     NSDictionary *configs = [MCCommon parsedAppConfigsFromPreferences:prefs];
     NSMutableSet *keys = [NSMutableSet setWithArray:[configs allKeys]];
     [keys addObjectsFromArray:sApplied.allKeys];
     NSDictionary *pidSnapshot = MCPidsForIdentifiers(keys.allObjects);
+    if (enabled) {
+        NSMutableDictionary *cpuConfigs = [NSMutableDictionary dictionary];
+        for (NSString *key in configs) cpuConfigs[key] = [configs[key] dictionaryValue];
+        MCCPUGuardUpdate(cpuConfigs, pidSnapshot, YES, ^(NSString *message) { MCLog(@"%@", message); });
+    }
 
     if (!enabled) {
         for (NSString *key in [sApplied allKeys]) {
@@ -380,6 +388,7 @@ static void MCRunSweep(BOOL force) {
 static dispatch_queue_t sWorkerQueue;    /* 串行：所有实际应用都在这里，天然互斥 */
 static dispatch_source_t sDebounceTimer; /* 合并短时间内重复的前台切换通知 */
 static dispatch_source_t sLaunchdForkSource;
+static dispatch_source_t sTerminationSource;
 static BOOL sSweepPending;
 
 static void MCScheduleSweepAfter(void) {
@@ -466,6 +475,13 @@ int main(int argc, const char *argv[]) {
         MCProtectDaemonItself();
 
         sWorkerQueue = dispatch_queue_create("com.moxuan.processguardian.worker", NULL);
+        signal(SIGTERM, SIG_IGN);
+        sTerminationSource = dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL, SIGTERM, 0, sWorkerQueue);
+        dispatch_source_set_event_handler(sTerminationSource, ^{
+            MCCPUGuardUpdate(@{}, @{}, NO, ^(NSString *message) { MCLog(@"%@", message); });
+            exit(0);
+        });
+        dispatch_resume(sTerminationSource);
 
         int token = 0;
         if (notify_register_dispatch(MCApplyLimitsNotification.UTF8String, &token,

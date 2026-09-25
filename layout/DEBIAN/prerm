@@ -3,6 +3,6 @@
 # KeepAlive 为真，先 unload 再 kill，否则删完进程还会被 launchd 复活。
 launchctl unload /Library/LaunchDaemons/com.moxuan.processguardiand.plist 2>/dev/null
 
-killall -9 processguardiand 2>/dev/null
+killall -TERM processguardiand 2>/dev/null
 
 exit 0

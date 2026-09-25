@@ -1,11 +1,11 @@
 #!/bin/sh
 
 # 升级时旧的 processguardiand 还在跑，它持有的是上一份配置和旧的二进制；
-# 先杀掉，再按新 plist 重新加载，launchd 才会拉起新版本。
-killall -9 processguardiand 2>/dev/null
+# 先正常停止并释放内核 CPU 监控，再重新加载。
 
 if [ -f /Library/LaunchDaemons/com.moxuan.processguardiand.plist ]; then
     launchctl unload /Library/LaunchDaemons/com.moxuan.processguardiand.plist 2>/dev/null
+    killall -TERM processguardiand 2>/dev/null
     launchctl load /Library/LaunchDaemons/com.moxuan.processguardiand.plist
 fi
 

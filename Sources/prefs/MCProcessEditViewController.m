@@ -166,8 +166,8 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
                      key:@"JetsamPriority"]];
     [limits addObject:[MCEditRow rowWithKind:MCEditRowOption title:@"进程优先级 (Nice)"
                      footer:@"-20 最高优先 到 19 最低优先，默认 0" key:@"NiceValue"]];
-    [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"前台 CPU 上限 (%)"
-                     footer:@"0 关闭；内核检测支持 2～100%。100% 约为单个核心满载；旧配置超过 100% 时不会启用检测"
+    [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"CPU 上限 (%)"
+                     footer:@"前台和后台均生效。0 关闭；内核检测支持 2～100%。100% 约为单个核心满载；旧配置超过 100% 时不会启用检测"
                      key:@"CPUThreshold"]];
     [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"CPU 检测窗口 (秒)"
                      footer:@"默认 10 秒；由内核按时间窗口判定。内核设置失败时不启用 CPU 检测"

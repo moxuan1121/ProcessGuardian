@@ -21,7 +21,7 @@ jobs:
           "$RUNNER_TEMP/kernel-priority-test"
       - name: Test process snapshots and daemon lifecycle
         run: |
-          clang -fobjc-arc -fblocks -Itests/include -ISources/libproc -framework Foundation tests/runtime.m Sources/MCCommon.m -o "$RUNNER_TEMP/runtime-test"
+          clang -fobjc-arc -fblocks -Itests/include -ISources/libproc -framework Foundation tests/runtime.m Sources/MCCommon.m Sources/MCCPUGuard.m -o "$RUNNER_TEMP/runtime-test"
           "$RUNNER_TEMP/runtime-test"
       - name: Select Xcode 15.4
         run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
