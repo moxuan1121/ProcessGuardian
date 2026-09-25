@@ -1,15 +1,16 @@
 # ProcessGuardian
 
-iOS 15–17.3 RootHide 隐根插件：在设置中管理进程的 nice 与 Jetsam 优先级、前后台内存上限、前台 CPU 阈值和后台自动重拉。默认总开关关闭，初次安装的进程列表为空。
+iOS 15–17.3 RootHide 隐根插件：在设置中管理进程的 nice 与 Jetsam 优先级、前后台内存上限和前台 CPU 阈值。默认总开关关闭，初次安装的进程列表为空。此分支已移除后台保活、自动重拉和注销后拉起功能。
 
 ## 组件
 
-- `ProcessGuardianPrefs.bundle`：设置中的进程列表与单项编辑页。可选应用或输入进程名；后台重拉只适用于应用包名。
+- `ProcessGuardianPrefs.bundle`：设置中的进程列表与单项编辑页，可从候选列表选择应用或系统进程。
 - `processguardiand`：root LaunchDaemon，应用内存与优先级设置；不做高频 CPU 采样。
 - `ProcessGuardian.dylib`：SpringBoard 前台切换探针。前台 CPU 限制优先使用 XNU fatal CPU monitor；设置失败或阈值超过 100% 时回退到原来的每秒采样与 `SIGKILL`。
-- `ProcessGuardianStay.dylib`：基于 StayAliveLite 重构的 SpringBoard 断言和重拉逻辑。用户上滑关闭会暂停重拉；系统内存限制或 CPU 阈值导致的进程退出可重新拉起。
 
-显式内存上限始终为 fatal 限额。CPU 阈值只监控前台应用；100% 约等于单个核心满载。内核监控的时间窗口与回退采样的「连续超限」判定并不完全相同。切出前台时会停用本插件设置的内核监控；XNU 的 fatal 标志在进程存活期间不能清除，因此此分支必须先在 RootHide 真机验证前后台切换及系统 CPU 策略的交互。守护与限额同时启用时，先让旧 PID 退出，再由守护逻辑启动新 PID。守护进程每 30 分钟兜底巡检一次；前台变化、应用启动和设置变更会立即触发检查。
+显式内存上限始终为 fatal 限额。CPU 阈值只监控前台应用；100% 约等于单个核心满载。内核监控的时间窗口与回退采样的「连续超限」判定并不完全相同。切出前台时会停用本插件设置的内核监控；XNU 的 fatal 标志在进程存活期间不能清除，因此此分支必须先在 RootHide 真机验证前后台切换及系统 CPU 策略的交互。限额触发退出后，本插件不再自动启动应用。内存与优先级服务每 30 分钟兜底巡检一次；前台变化、应用启动和设置变更会立即触发检查。
+
+从旧版升级后需重新加载 SpringBoard，以卸载内存中的旧保活模块。旧配置中的 `KeepAlive` 和 `RelaunchAfterRespring` 字段会被忽略，现有 CPU、内存和优先级设置继续使用。
 
 ## 构建
 
@@ -21,4 +22,4 @@ Jetsam 配置保留 0～210 的统一档位。iOS 15 写入对应的 0～21 内�
 
 ## 来源与许可
 
-CPU 采样与进程身份复核参考 [CPUOverloadKiller](https://github.com/moxuan1121/CPUOverloadKiller)，按 GPL-3.0 许可使用并作了改动：改为读取统一配置、仅监控前台应用，并由本工程的后台守护逻辑处理退出后的重拉。MemoryControlRe、StayAliveLite 的重构源码来自本次提供的本地工程。本项目按 [GPL-3.0](LICENSE) 发布。
+CPU 采样与进程身份复核参考 [CPUOverloadKiller](https://github.com/moxuan1121/CPUOverloadKiller)，按 GPL-3.0 许可使用并作了改动：改为读取统一配置、仅监控前台应用。MemoryControlRe 的重构源码来自本次提供的本地工程；历史版本使用过 StayAliveLite 重构源码，当前已移除其保活模块。本项目按 [GPL-3.0](LICENSE) 发布。

@@ -63,6 +63,19 @@ int main(void) {
     assert(!MCPidsForIdentifiers(keys).count); // No stale PID/bundle cache.
 
     assert([fm createDirectoryAtPath:[MCCommon preferencesDirectory] withIntermediateDirectories:YES attributes:nil error:nil]);
+    NSDictionary *legacy = @{@"Enabled": @YES, @"AppConfigs": @{@"com.example.app":
+        @{@"KeepAlive": @YES, @"RelaunchAfterRespring": @YES, @"CPUThreshold": @85,
+          @"CPUDuration": @5, @"MemLimitInactive": @512, @"JetsamPriority": @160,
+          @"NiceValue": @(-1), @"Remark": @"Example"}}};
+    assert([legacy writeToFile:[MCCommon preferencesPlistPath] atomically:YES]);
+    NSDictionary *cleaned = [MCCommon readPreferences][@"AppConfigs"][@"com.example.app"];
+    assert(!cleaned[@"KeepAlive"] && !cleaned[@"RelaunchAfterRespring"]);
+    NSMutableDictionary *expected = [legacy[@"AppConfigs"][@"com.example.app"] mutableCopy];
+    [expected removeObjectsForKeys:@[@"KeepAlive", @"RelaunchAfterRespring"]];
+    assert([cleaned isEqual:expected]);
+    MCProcessConfig *legacyConfig = [MCProcessConfig configWithDictionary:legacy[@"AppConfigs"][@"com.example.app"] key:@"com.example.app"];
+    assert(legacyConfig.cpuThreshold == 85 && legacyConfig.cpuDuration == 5);
+    assert(![legacyConfig dictionaryValue][@"KeepAlive"]);
     paths = @{@900101: [app stringByAppendingPathComponent:@"Example"]};
     sLogFile = [MCCommon logFilePath]; sLogSizeLimitMB = 2; sApplied = [NSMutableDictionary dictionary];
     NSDictionary *prefs = @{@"Enabled": @YES, @"AppConfigs": @{@"com.example.app": @{@"JetsamPriority": @150}}};

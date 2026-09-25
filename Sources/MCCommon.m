@@ -29,8 +29,6 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
     c.niceValue           = dict[@"NiceValue"] ? [dict[@"NiceValue"] integerValue] : 0;
     c.cpuThreshold        = [dict[@"CPUThreshold"] integerValue];
     c.cpuDuration         = [dict[@"CPUDuration"] integerValue];
-    c.keepAlive           = [dict[@"KeepAlive"] boolValue];
-    c.relaunchAfterRespring = [dict[@"RelaunchAfterRespring"] boolValue];
 
     c.remark = [dict[@"Remark"] isKindOfClass:[NSString class]] ? dict[@"Remark"] : @"";
     return c;
@@ -52,8 +50,6 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
         @"NiceValue":              @(self.niceValue),
         @"CPUThreshold":           @(self.cpuThreshold),
         @"CPUDuration":            @(self.cpuDuration),
-        @"KeepAlive":              @(self.keepAlive),
-        @"RelaunchAfterRespring":   @(self.relaunchAfterRespring),
         @"Remark":                 self.remark ?: @"",
     };
 }
@@ -74,8 +70,6 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
     c.niceValue = _niceValue;
     c.cpuThreshold = _cpuThreshold;
     c.cpuDuration = _cpuDuration;
-    c.keepAlive = _keepAlive;
-    c.relaunchAfterRespring = _relaunchAfterRespring;
     c.remark = [self.remark copy];
     return c;
 }
@@ -116,7 +110,20 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
 
 + (NSDictionary *)readPreferences {
     NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:[self preferencesPlistPath]];
-    return [d isKindOfClass:[NSDictionary class]] ? d : @{};
+    if (![d isKindOfClass:[NSDictionary class]]) return @{};
+    NSMutableDictionary *prefs = [d mutableCopy];
+    id storedApps = prefs[@"AppConfigs"];
+    if ([storedApps isKindOfClass:[NSDictionary class]]) {
+        NSMutableDictionary *apps = [storedApps mutableCopy];
+        for (NSString *key in [apps allKeys]) {
+            if (![apps[key] isKindOfClass:[NSDictionary class]]) continue;
+            NSMutableDictionary *entry = [apps[key] mutableCopy];
+            [entry removeObjectsForKeys:@[@"KeepAlive", @"RelaunchAfterRespring"]];
+            apps[key] = entry;
+        }
+        prefs[@"AppConfigs"] = apps;
+    }
+    return prefs;
 }
 
 + (NSDictionary *)readStatus {

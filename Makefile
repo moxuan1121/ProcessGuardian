@@ -8,17 +8,12 @@ INSTALL_TARGET_PROCESSES = SpringBoard
 include $(THEOS)/makefiles/common.mk
 
 # ============================================================ 1. 前台切换探针
-TWEAK_NAME = ProcessGuardian ProcessGuardianStay
+TWEAK_NAME = ProcessGuardian
 
 ProcessGuardian_FILES = Sources/Tweak.x Sources/MCCPUGuard.m Sources/MCCommon.m
 ProcessGuardian_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/Sources/libproc
 ProcessGuardian_FRAMEWORKS = Foundation UIKit
 ProcessGuardian_INSTALL_PATH = /usr/lib/TweakInject
-
-ProcessGuardianStay_FILES = Sources/stay/Tweak.x Sources/stay/SALiteConfig.m Sources/stay/SALiteStayAliveManager.m Sources/MCCommon.m
-ProcessGuardianStay_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/Sources/libproc -Wno-deprecated-declarations
-ProcessGuardianStay_FRAMEWORKS = UIKit Foundation SystemConfiguration
-ProcessGuardianStay_INSTALL_PATH = /usr/lib/TweakInject
 
 # ====================================================== 2. root 守护进程（全部特权工作）
 TOOL_NAME = processguardiand

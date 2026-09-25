@@ -6,7 +6,7 @@
  * 在 Substrate、Substitute 以及 TrollFools 直接注入场景下都能加载，
  * 不再产生对 CydiaSubstrate.framework 的链接期依赖。
  *
- * 通知名在这里是硬编码常量，dylib 因此不链接 MCCommon.m —— 保持和原版一样小。
+ * 应用启动通知用于及时应用内存和优先级配置。
  */
 #import <Foundation/Foundation.h>
 #import <CoreFoundation/CoreFoundation.h>
@@ -22,6 +22,13 @@ typedef void (*MCFrontDisplayChangedIMP)(id, SEL, id);
 
 /* 原 IMP 属于类而非实例，associated object 无从挂载，用文件静态变量保存。 */
 static MCFrontDisplayChangedIMP sOriginalIMP;
+static MCFrontDisplayChangedIMP sOriginalProcessLaunchIMP;
+
+static void MC_applicationProcessDidLaunch(id self, SEL cmd, id process) {
+    if (sOriginalProcessLaunchIMP) sOriginalProcessLaunchIMP(self, cmd, process);
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+        (__bridge CFStringRef)kApplyLimitsNotification, NULL, NULL, true);
+}
 
 static NSString *MCFrontmostBundle(void) {
     id app = UIApplication.sharedApplication;
@@ -46,6 +53,16 @@ static void MC_frontDisplayDidChange(id self, SEL _cmd, id display) {
 static void MCInstall(void) {
     Class cls = objc_getClass("SpringBoard");
     if (!cls) return;                       /* 非 SpringBoard 进程，静默退出 */
+
+    Class workspace = objc_getClass("SBMainWorkspace");
+    SEL launch = sel_registerName("applicationProcessDidLaunch:");
+    Method launchMethod = class_getInstanceMethod(workspace, launch);
+    if (launchMethod) {
+        sOriginalProcessLaunchIMP = (MCFrontDisplayChangedIMP)method_getImplementation(launchMethod);
+        if (!class_addMethod(workspace, launch, (IMP)MC_applicationProcessDidLaunch,
+                             method_getTypeEncoding(launchMethod)))
+            method_setImplementation(launchMethod, (IMP)MC_applicationProcessDidLaunch);
+    }
 
     SEL sel = sel_registerName("frontDisplayDidChange:");
     Method m = class_getInstanceMethod(cls, sel);

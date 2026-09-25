@@ -1,7 +1,7 @@
 /**
  * MCProcessEditViewController.m —— 单条配置的编辑器。
  *
- * 不用 PSListController 而是手搓 tableView：这一页要同时放文本框、开关，以及一个
+ * 使用 tableView：这一页要同时放文本框，以及一个
  * 需要底部菜单选择的优先级列表。用 specifier 驱动就得为每个控件现造
  * PSSpecifier，还得依赖 PreferenceLoader 未文档化的 Detail 传递机制。
  *
@@ -14,7 +14,6 @@
 typedef NS_ENUM(NSInteger, MCEditRowKind) {
     MCEditRowText,     /* 文本（进程名 / 备注） */
     MCEditRowNumber,   /* 数字（限额 / CPU） */
-    MCEditRowSwitch,   /* 开关 */
     MCEditRowOption,   /* 底部菜单选择 */
     MCEditRowIdentifier, /* 进入候选列表选择 */
 };
@@ -38,7 +37,7 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
 }
 @end
 
-/* ------------------------------------------------------------------ 两个控件 cell */
+/* ------------------------------------------------------------------ 输入 cell */
 
 @interface MCFieldCell : UITableViewCell
 @property (nonatomic, strong) UITextField *field;
@@ -68,25 +67,6 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     return self;
 }
 - (void)commit { if (self.onCommit) self.onCommit(self.field.text ?: @""); }
-@end
-
-@interface MCSwitchCell : UITableViewCell
-@property (nonatomic, strong) UISwitch *sw;
-@property (nonatomic, copy) void (^onToggle)(BOOL on);
-@end
-
-@implementation MCSwitchCell
-- (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)rid {
-    self = [super initWithStyle:style reuseIdentifier:rid];
-    if (self) {
-        self.selectionStyle = UITableViewCellSelectionStyleNone;
-        _sw = [UISwitch new];
-        [_sw addTarget:self action:@selector(toggle) forControlEvents:UIControlEventValueChanged];
-        self.accessoryView = _sw;
-    }
-    return self;
-}
-- (void)toggle { if (self.onToggle) self.onToggle(self.sw.isOn); }
 @end
 
 /* ------------------------------------------------------------------  编辑器 */
@@ -169,8 +149,7 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
 }
 
 - (void)buildRows {
-    NSMutableArray *identity = [NSMutableArray array], *limits = [NSMutableArray array],
-                   *switches = [NSMutableArray array];
+    NSMutableArray *identity = [NSMutableArray array], *limits = [NSMutableArray array];
 
     [identity addObject:[MCEditRow rowWithKind:MCEditRowIdentifier title:@"目标进程名 / 包名"
                      footer:@"通过包名或进程名识别进程" key:@"__identifier"]];
@@ -194,14 +173,8 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
                      footer:@"默认 10 秒；内核监控按此时间窗口判定，回退采样按连续超限判定"
                      key:@"CPUDuration"]];
 
-    [switches addObject:[MCEditRow rowWithKind:MCEditRowSwitch title:@"后台被杀后自动重新拉起"
-        footer:@"仅适用于应用包名；超过内存或 CPU 阈值而退出后也会重新拉起"
-        key:@"KeepAlive"]];
-    [switches addObject:[MCEditRow rowWithKind:MCEditRowSwitch title:@"注销后自动拉起"
-        footer:@"重启 SpringBoard 后按顺序恢复已守护的应用" key:@"RelaunchAfterRespring"]];
-
-    self.sections = @[ identity, limits, switches ];
-    self.sectionTitles = [@[ @"目标说明", @"内存限制", @"后台守护" ] mutableCopy];
+    self.sections = @[ identity, limits ];
+    self.sectionTitles = [@[ @"目标说明", @"内存限制" ] mutableCopy];
 }
 
 - (void)setupTable {
@@ -211,7 +184,6 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     self.table.rowHeight = UITableViewAutomaticDimension;
     self.table.estimatedRowHeight = 64;
     [self.table registerClass:[MCFieldCell class] forCellReuseIdentifier:@"field"];
-    [self.table registerClass:[MCSwitchCell class] forCellReuseIdentifier:@"switch"];
     self.table.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.table];
     [NSLayoutConstraint activateConstraints:@[
@@ -255,15 +227,6 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)path {
     MCEditRow *row = self.sections[path.section][path.row];
     __weak typeof(self) ws = self;
-
-    if (row.kind == MCEditRowSwitch) {
-        MCSwitchCell *c = [tv dequeueReusableCellWithIdentifier:@"switch" forIndexPath:path];
-        c.textLabel.text = row.title;
-        c.textLabel.numberOfLines = 0;
-        c.sw.on = [self.config[row.key] boolValue];
-        c.onToggle = ^(BOOL on) { ws.config[row.key] = @(on); };
-        return c;
-    }
 
     if (row.kind == MCEditRowIdentifier) {
         UITableViewCell *c = [tv dequeueReusableCellWithIdentifier:@"identifier"];

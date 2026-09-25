@@ -47,7 +47,7 @@ jobs:
           test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
           contents="$(dpkg-deb -c "$deb")"
           printf '%s\n' "$contents"
-          for file in ProcessGuardian.dylib ProcessGuardianStay.dylib processguardiand ProcessGuardianPrefs.bundle; do
+          for file in ProcessGuardian.dylib processguardiand ProcessGuardianPrefs.bundle; do
             grep -q "$file" <<<"$contents"
           done
           grep -q 'ProcessGuardianPrefs.bundle/Info.plist' <<<"$contents"
@@ -60,8 +60,7 @@ jobs:
           ldid -e "$RUNNER_TEMP/processguardian-deb/usr/bin/processguardiand" | python3 -c 'import plistlib, sys; assert plistlib.loads(sys.stdin.buffer.read()).get("com.apple.private.memorystatus") is True'
           grep -q 'usr/lib/TweakInject/ProcessGuardian.dylib' <<<"$contents"
           grep -q 'usr/lib/TweakInject/ProcessGuardian.plist' <<<"$contents"
-          grep -q 'usr/lib/TweakInject/ProcessGuardianStay.dylib' <<<"$contents"
-          grep -q 'usr/lib/TweakInject/ProcessGuardianStay.plist' <<<"$contents"
+          ! grep -q 'ProcessGuardianStay' <<<"$contents"
           ! grep -q 'Library/MobileSubstrate/' <<<"$contents"
           ! grep -q 'var/jb/' <<<"$contents"
           ! grep -Eq 'usr/lib/(libellekit|libsubstrate)|usr/libexec/ellekit|CydiaSubstrate.framework' <<<"$contents"

@@ -131,11 +131,10 @@ NSArray<NSString *> *MCPriorityNames(void) {
             actualNice = [status[@"ActualNice"] stringValue];
     }
     NSInteger configuredPriority = cfg[@"JetsamPriority"] ? [cfg[@"JetsamPriority"] integerValue] : -1;
-    return [NSString stringWithFormat:@"p=%@、n=%@、pid=%@\np=%ld、a=%ld、i=%ld、n=%ld、s=%d",
+    return [NSString stringWithFormat:@"p=%@、n=%@、pid=%@\np=%ld、a=%ld、i=%ld、n=%ld",
         actualPriority, actualNice, pid ? [@(pid) stringValue] : @"?",
         (long)configuredPriority, (long)[cfg[@"MemLimitActive"] integerValue],
-        (long)[cfg[@"MemLimitInactive"] integerValue], (long)[cfg[@"NiceValue"] integerValue],
-        [cfg[@"KeepAlive"] boolValue] ? 1 : 0];
+        (long)[cfg[@"MemLimitInactive"] integerValue], (long)[cfg[@"NiceValue"] integerValue]];
 }
 
 @end

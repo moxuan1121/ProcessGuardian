@@ -31,13 +31,11 @@ extern const double  MCDefaultLogSizeLimitMB;   /* 2 MB  */
 @property (nonatomic, assign) NSInteger niceValue;         /* PRIO_MIN..PRIO_MAX */
 @property (nonatomic, assign) NSInteger cpuThreshold;     /* 前台 CPU 百分比；0=关闭 */
 @property (nonatomic, assign) NSInteger cpuDuration;      /* 内核监控窗口或回退采样的连续超限秒数 */
-@property (nonatomic, assign) BOOL keepAlive;
-@property (nonatomic, assign) BOOL relaunchAfterRespring;
 
 @property (nonatomic, copy)   NSString *remark;       /* 偏好面板显示名 */
 
 + (instancetype)configWithDictionary:(NSDictionary *)dict key:(NSString *)key;
-/** 全默认值（不设限额、不动优先级、所有强锁关闭）。 */
+/** 全默认值（不设限额、不动优先级）。 */
 + (instancetype)defaultConfigForIdentifier:(NSString *)key;
 - (NSDictionary *)dictionaryValue;
 /** 至少有一项需要处理（否则守护进程可以直接跳过该进程）。 */

@@ -156,7 +156,7 @@ static NSString *const kLogLimitKey = @"LogSizeLimit";
             [self alertWithMessage:@"配置包含无效的进程记录"];
             return;
         }
-        for (NSString *field in @[@"MemLimitActive", @"MemLimitInactive", @"JetsamPriority", @"NiceValue", @"CPUThreshold", @"CPUDuration", @"KeepAlive", @"RelaunchAfterRespring"]) {
+        for (NSString *field in @[@"MemLimitActive", @"MemLimitInactive", @"JetsamPriority", @"NiceValue", @"CPUThreshold", @"CPUDuration"]) {
             id value = entry[field];
             if (value && ![value isKindOfClass:NSNumber.class] && ![value isKindOfClass:NSString.class]) {
                 [self alertWithMessage:@"配置包含无效的数值类型"];
