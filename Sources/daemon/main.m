@@ -396,10 +396,10 @@ static dispatch_source_t sCPUTimer;
 
 static void MCUpdateCPUTimer(void) {
     if (!sCPUTimer) return;
-    BOOL active = MCCPUGuardHasTargets();
+    uint64_t delay = MCCPUGuardNextDelay();
     dispatch_source_set_timer(sCPUTimer,
-        active ? dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC) : DISPATCH_TIME_FOREVER,
-        active ? NSEC_PER_SEC : DISPATCH_TIME_FOREVER, NSEC_PER_MSEC * 100);
+        delay == UINT64_MAX ? DISPATCH_TIME_FOREVER : dispatch_time(DISPATCH_TIME_NOW, delay),
+        DISPATCH_TIME_FOREVER, NSEC_PER_MSEC * 50);
 }
 
 static void MCScheduleSweepAfter(void) {
@@ -507,6 +507,20 @@ int main(int argc, const char *argv[]) {
         if (notify_register_dispatch(MCApplyLimitsNotification.UTF8String, &token,
                                      sWorkerQueue, ^(int t) { MCScheduleSweepAfter(); }) != 0)
             MCLog(@"[守护] 通知注册失败，仅依赖周期巡检");
+
+        int frontToken = 0;
+        if (notify_register_dispatch(MCCPUFrontmostNotification.UTF8String, &frontToken,
+                                     sWorkerQueue, ^(int t) {
+            uint64_t hash = 0;
+            if (notify_get_state(t, &hash) == NOTIFY_STATUS_OK) {
+                MCCPUGuardSetFrontmostHash(hash);
+                MCUpdateCPUTimer();
+            }
+        }) == NOTIFY_STATUS_OK) {
+            uint64_t hash = 0;
+            if (notify_get_state(frontToken, &hash) == NOTIFY_STATUS_OK)
+                MCCPUGuardSetFrontmostHash(hash);
+        }
 
         dispatch_sync(sWorkerQueue, ^{ MCRunSweep(NO); });
 

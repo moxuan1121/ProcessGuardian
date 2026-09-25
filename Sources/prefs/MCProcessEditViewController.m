@@ -16,6 +16,7 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     MCEditRowNumber,   /* 数字（限额 / CPU） */
     MCEditRowOption,   /* 底部菜单选择 */
     MCEditRowIdentifier, /* 进入候选列表选择 */
+    MCEditRowSwitch,
 };
 
 @interface MCEditRow : NSObject
@@ -88,9 +89,9 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
 
     NSDictionary *stored = self.targetIdentifier.length
         ? [MCPrefs readPrefs][@"AppConfigs"][self.targetIdentifier] : nil;
-    self.config = [stored isKindOfClass:[NSDictionary class]]
-                  ? [stored mutableCopy]
-                  : [[[MCProcessConfig defaultConfigForIdentifier:self.targetIdentifier] dictionaryValue] mutableCopy];
+    self.config = [[[MCProcessConfig defaultConfigForIdentifier:self.targetIdentifier] dictionaryValue] mutableCopy];
+    if ([stored isKindOfClass:[NSDictionary class]]) [self.config addEntriesFromDictionary:stored];
+    if ([self.config[@"CPUDuration"] integerValue] < 1) self.config[@"CPUDuration"] = @10;
 
     [self buildRows];
     [self setupTable];
@@ -150,6 +151,7 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
 
 - (void)buildRows {
     NSMutableArray *identity = [NSMutableArray array], *limits = [NSMutableArray array];
+    NSMutableArray *cpu = [NSMutableArray array], *sampling = [NSMutableArray array];
 
     [identity addObject:[MCEditRow rowWithKind:MCEditRowIdentifier title:@"目标进程名 / 包名"
                      footer:@"通过包名或进程名识别进程" key:@"__identifier"]];
@@ -166,15 +168,26 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
                      key:@"JetsamPriority"]];
     [limits addObject:[MCEditRow rowWithKind:MCEditRowOption title:@"进程优先级 (Nice)"
                      footer:@"-20 最高优先 到 19 最低优先，默认 0" key:@"NiceValue"]];
-    [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"CPU 上限 (%)"
-                     footer:@"前台和后台均生效。0 关闭；内核检测支持 2～100%。100% 约为单个核心满载；旧配置超过 100% 时不会启用检测"
+    [cpu addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"CPU 上限 (%)"
+                     footer:@"0 关闭；2～1000%。100% 约为单个核心满载。"
                      key:@"CPUThreshold"]];
-    [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"CPU 检测窗口 (秒)"
-                     footer:@"默认 10 秒；由内核按时间窗口判定。内核设置失败时不启用 CPU 检测"
+    [cpu addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"连续超限 (秒)"
+                     footer:@"CPU 连续超过上限达到设定时间后终止进程；低于上限会重置计时。"
                      key:@"CPUDuration"]];
+    [cpu addObject:[MCEditRow rowWithKind:MCEditRowSwitch title:@"后台继续监控"
+                     footer:@"默认只监控前台应用；系统进程运行时持续监控。" key:@"CPUBackground"]];
+    [sampling addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"低负载采样间隔 (秒)"
+                     footer:nil key:@"CPUIdleSample"]];
+    [sampling addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"接近阈值比例 (%)"
+                     footer:nil key:@"CPUNearRatio"]];
+    [sampling addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"接近阈值采样间隔 (秒)"
+                     footer:nil key:@"CPUNearSample"]];
+    [sampling addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"超限采样间隔 (秒)"
+                     footer:@"默认低负载 60 秒、接近阈值 15 秒、超限 1 秒。接近阈值指 CPU 上限乘以设定比例；超限采样间隔不能大于连续超限时间。"
+                     key:@"CPUExceedSample"]];
 
-    self.sections = @[ identity, limits ];
-    self.sectionTitles = [@[ @"目标说明", @"内存限制" ] mutableCopy];
+    self.sections = @[ identity, limits, cpu, sampling ];
+    self.sectionTitles = [@[ @"目标说明", @"内存限制", @"CPU 限制", @"采样策略" ] mutableCopy];
 }
 
 - (void)setupTable {
@@ -202,9 +215,20 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
     NSScanner *scanner = [NSScanner scannerWithString:text ?: @""];
     NSInteger parsed = 0;
     if ([scanner scanInteger:&parsed] && scanner.isAtEnd) {
-        if ([row.key isEqualToString:@"CPUThreshold"] && parsed != 0 && (parsed < 2 || parsed > 100)) parsed = 0;
+        if ([row.key isEqualToString:@"CPUThreshold"] && parsed != 0 && (parsed < 2 || parsed > 1000)) parsed = 0;
         if ([row.key isEqualToString:@"CPUDuration"] && (parsed < 1 || parsed > 3600)) parsed = 10;
+        if ([row.key isEqualToString:@"CPUNearRatio"] && (parsed < 1 || parsed > 99)) parsed = 67;
+        if ([row.key isEqualToString:@"CPUIdleSample"] && (parsed < 1 || parsed > 3600)) parsed = 60;
+        if ([row.key isEqualToString:@"CPUNearSample"] && (parsed < 1 || parsed > 3600)) parsed = 15;
+        if ([row.key isEqualToString:@"CPUExceedSample"] && (parsed < 1 || parsed > 3600)) parsed = 1;
         self.config[row.key] = @(parsed);
+        if ([row.key isEqualToString:@"CPUDuration"] &&
+            [self.config[@"CPUExceedSample"] integerValue] > parsed && parsed > 0)
+            self.config[@"CPUExceedSample"] = @(parsed);
+        if ([row.key isEqualToString:@"CPUExceedSample"] &&
+            parsed > [self.config[@"CPUDuration"] integerValue] &&
+            [self.config[@"CPUDuration"] integerValue] > 0)
+            self.config[row.key] = self.config[@"CPUDuration"];
     } else {
         self.config[row.key] = @0;   /* 解析不动就按「不设置」处理，避免误填把限额改成 0 以外的值 */
     }
@@ -251,6 +275,20 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
         c.field.keyboardType = row.kind == MCEditRowNumber ? UIKeyboardTypeNumbersAndPunctuation
                                                           : UIKeyboardTypeDefault;
         c.onCommit = ^(NSString *text) { [ws commitTextForRow:row text:text]; };
+        return c;
+    }
+
+    if (row.kind == MCEditRowSwitch) {
+        UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+        c.textLabel.text = row.title;
+        c.selectionStyle = UITableViewCellSelectionStyleNone;
+        UISwitch *toggle = [UISwitch new];
+        toggle.on = [self.config[row.key] boolValue];
+        __weak UISwitch *weakToggle = toggle;
+        [toggle addAction:[UIAction actionWithHandler:^(__unused UIAction *action) {
+            ws.config[row.key] = @(weakToggle.on);
+        }] forControlEvents:UIControlEventValueChanged];
+        c.accessoryView = toggle;
         return c;
     }
 

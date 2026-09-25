@@ -14,8 +14,26 @@
 #import <objc/message.h>
 #import <os/log.h>
 #import <UIKit/UIKit.h>
+#import <notify.h>
 
 static NSString *const kApplyLimitsNotification = @"com.moxuan.processguardian/ProcessChanged";
+static const char *kCPUFrontmostNotification = "com.moxuan.processguardian/CPUFrontmost";
+static int sCPUFrontmostToken = -1;
+
+static void MCPostFrontmost(void) {
+    UIApplication *app = UIApplication.sharedApplication;
+    SEL selector = sel_registerName("_accessibilityFrontMostApplication");
+    id front = [app respondsToSelector:selector] ? ((id (*)(id, SEL))objc_msgSend)(app, selector) : nil;
+    NSString *bundle = [front respondsToSelector:@selector(bundleIdentifier)] ? [front bundleIdentifier] : nil;
+    uint64_t hash = 0;
+    if (bundle.length) {
+        hash = 1469598103934665603ULL;
+        const unsigned char *bytes = (const unsigned char *)bundle.UTF8String;
+        for (; *bytes; bytes++) { hash ^= *bytes; hash *= 1099511628211ULL; }
+    }
+    if (sCPUFrontmostToken >= 0) notify_set_state(sCPUFrontmostToken, hash);
+    notify_post(kCPUFrontmostNotification);
+}
 
 typedef void (*MCFrontDisplayChangedIMP)(id, SEL, id);
 
@@ -31,6 +49,7 @@ static void MC_applicationProcessDidLaunch(id self, SEL cmd, id process) {
 
 static void MC_frontDisplayDidChange(id self, SEL _cmd, id display) {
     if (sOriginalIMP) sOriginalIMP(self, _cmd, display);
+    MCPostFrontmost();
 
     /* 只发一个纯信号，不带 payload：读配置、算 PID、下内核调用全在守护进程里。 */
     CFNotificationCenterPostNotification(
@@ -42,6 +61,8 @@ static void MC_frontDisplayDidChange(id self, SEL _cmd, id display) {
 static void MCInstall(void) {
     Class cls = objc_getClass("SpringBoard");
     if (!cls) return;                       /* 非 SpringBoard 进程，静默退出 */
+    notify_register_check(kCPUFrontmostNotification, &sCPUFrontmostToken);
+    dispatch_async(dispatch_get_main_queue(), ^{ MCPostFrontmost(); });
 
     Class workspace = objc_getClass("SBMainWorkspace");
     SEL launch = sel_registerName("applicationProcessDidLaunch:");

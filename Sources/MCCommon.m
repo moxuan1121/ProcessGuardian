@@ -8,6 +8,7 @@
 NSString *const MCDomain                 = @"com.moxuan.processguardian";
 NSString *const MCApplyLimitsNotification = @"com.moxuan.processguardian/ApplyLimits";
 NSString *const MCProcessChangedNotification = @"com.moxuan.processguardian/ProcessChanged";
+NSString *const MCCPUFrontmostNotification = @"com.moxuan.processguardian/CPUFrontmost";
 NSString *const MCStatusFileName          = @"com.moxuan.processguardian.status.plist";
 NSString *const MCLogFileName             = @"ProcessGuardian.log";
 
@@ -29,6 +30,11 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
     c.niceValue           = dict[@"NiceValue"] ? [dict[@"NiceValue"] integerValue] : 0;
     c.cpuThreshold        = [dict[@"CPUThreshold"] integerValue];
     c.cpuDuration         = [dict[@"CPUDuration"] integerValue];
+    c.cpuIdleSample       = dict[@"CPUIdleSample"] ? [dict[@"CPUIdleSample"] integerValue] : 60;
+    c.cpuNearRatio        = dict[@"CPUNearRatio"] ? [dict[@"CPUNearRatio"] integerValue] : 67;
+    c.cpuNearSample       = dict[@"CPUNearSample"] ? [dict[@"CPUNearSample"] integerValue] : 15;
+    c.cpuExceedSample     = dict[@"CPUExceedSample"] ? [dict[@"CPUExceedSample"] integerValue] : 1;
+    c.cpuBackground       = [dict[@"CPUBackground"] boolValue];
 
     c.remark = [dict[@"Remark"] isKindOfClass:[NSString class]] ? dict[@"Remark"] : @"";
     return c;
@@ -38,6 +44,8 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
     MCProcessConfig *c = [MCProcessConfig new];
     c.key = key ?: @"";
     c.jetsamPriority = -1;              /* -1 = 交还系统，不要设置 */
+    c.cpuDuration = 10;
+    c.cpuIdleSample = 60; c.cpuNearRatio = 67; c.cpuNearSample = 15; c.cpuExceedSample = 1;
     c.remark = key ?: @"";
     return c;
 }
@@ -50,6 +58,11 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
         @"NiceValue":              @(self.niceValue),
         @"CPUThreshold":           @(self.cpuThreshold),
         @"CPUDuration":            @(self.cpuDuration),
+        @"CPUIdleSample":          @(self.cpuIdleSample),
+        @"CPUNearRatio":           @(self.cpuNearRatio),
+        @"CPUNearSample":          @(self.cpuNearSample),
+        @"CPUExceedSample":        @(self.cpuExceedSample),
+        @"CPUBackground":          @(self.cpuBackground),
         @"Remark":                 self.remark ?: @"",
     };
 }
@@ -70,6 +83,11 @@ const double    MCDefaultLogSizeLimitMB = 2.0;
     c.niceValue = _niceValue;
     c.cpuThreshold = _cpuThreshold;
     c.cpuDuration = _cpuDuration;
+    c.cpuIdleSample = _cpuIdleSample;
+    c.cpuNearRatio = _cpuNearRatio;
+    c.cpuNearSample = _cpuNearSample;
+    c.cpuExceedSample = _cpuExceedSample;
+    c.cpuBackground = _cpuBackground;
     c.remark = [self.remark copy];
     return c;
 }

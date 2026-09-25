@@ -1,27 +1,21 @@
 # ProcessGuardian
 
-iOS 15–17.3 RootHide 隐根插件：在设置中管理进程的 nice 与 Jetsam 优先级、前后台内存上限和前后台 CPU 阈值。默认总开关关闭，初次安装的进程列表为空。此分支已移除后台保活、自动重拉和注销后拉起功能。
+iOS 15–17.3 RootHide 隐根插件，在系统设置中配置进程 Nice、Jetsam 优先级、前后台内存上限与 CPU 连续超限终止。首次安装时进程列表为空，总开关默认关闭。
 
-## 组件
+## CPU 监控
 
-- `ProcessGuardianPrefs.bundle`：设置中的进程列表与单项编辑页，可从候选列表选择应用或系统进程。
-- `processguardiand`：root LaunchDaemon，应用内存、优先级和 CPU 设置。CPU 限制仅使用 XNU fatal CPU monitor，支持 2～100% 阈值；同一配置对前台和后台均生效。接口不可用或设置失败时记录错误，旧的每秒 CPU 采样、连续超限累计和 `SIGKILL` 回退已删除。
-- `ProcessGuardian.dylib`：SpringBoard 前台切换与应用启动探针，仅通知服务检查配置；切换前台不会撤销后台进程的 CPU 限额。
+CPU 监控采用 [CPUOverloadKiller](https://github.com/moxuan1121/CPUOverloadKiller) 的自适应采样策略，读取整个进程的累计 CPU 时间。应用默认只在前台监控，可单独开启“后台继续监控”；系统进程在运行期间监控。应用退出前台时，连续超限计时清零。
 
-已有 CPU 监控会使 `proc_set_cpumon_params_fatal` 返回 `EBUSY`。对明确配置了 CPU 限额的目标，服务读取原参数后停用已有监控，再设置致命限额并回读阈值与窗口；设置失败时恢复原参数，恢复失败则保留记录以便重试。同一 PID、配置和错误的重复日志会合并。此处理仍只使用内核接口，不启用采样回退。
+每个目标可设置 CPU 上限（2～1000%，0 关闭）、连续超限时间、低负载采样间隔、接近阈值比例、接近阈值采样间隔和超限采样间隔。默认值依次为 10 秒、60 秒、67%、15 秒、1 秒。最近一次 CPU 使用率低于“上限 × 接近阈值比例”时按低负载间隔采样；达到该比例时按接近阈值间隔采样；超过上限后按超限间隔采样。低于上限会清零连续超限时间。达到设定时间后，守护进程重新核对 PID、启动时间、可执行路径和进程身份，再终止目标。
 
-显式内存上限始终为 fatal 限额。100% 约等于单个核心满载。CPU 检测按内核时间窗口判定，窗口默认 10 秒，支持 1～3600 秒；前后台进程达到内核超限条件均可被结束。挂起、不消耗 CPU 的进程不会因空等窗口时长而被杀。旧配置超过 100% 时不会启用 CPU 检测，需要改为支持的阈值。总开关关闭、CPU 配置关闭或移除记录时停用本插件持有的监控；XNU 的 fatal 标志在进程存活期间不能清除，需真机验证与系统 CPU 策略的交互。限额触发退出后，本插件不再自动启动应用。服务每 30 分钟兜底巡检一次；前台变化、应用启动和设置变更会立即触发检查，相同 PID 与 CPU 配置不会重复重置监控窗口。
-
-从旧版升级后需重新加载 SpringBoard，以卸载内存中的旧保活模块。旧配置中的 `KeepAlive` 和 `RelaunchAfterRespring` 字段会被忽略，现有 CPU、内存和优先级设置继续使用。
+所有目标共用 root 守护进程中的一个动态定时器。没有需要监控的前台应用或系统进程时，定时器暂停。SpringBoard 探针只传递前台切换和进程启动事件。旧的 XNU fatal CPU monitor 已移除；升级后需重新加载 SpringBoard。此分支不包含后台保活或自动重拉。
 
 ## 构建
 
-Jetsam 配置保留 0～210 的统一档位。iOS 15 写入对应的 0～21 内核档位（如配置 150 → 内核 15）；iOS 16 起使用 0～210。列表当前状态显示实际内核值，配置行显示保存的配置值，日志同时记录换算及回读结果。依据 Apple XNU [8020](https://github.com/apple-oss-distributions/xnu/blob/xnu-8020.140.41/bsd/sys/kern_memorystatus.h) 与 [8792](https://github.com/apple-oss-distributions/xnu/blob/xnu-8792.41.9/bsd/sys/kern_memorystatus.h) 的档位定义。
+需要 RootHide Theos 与 iOS SDK。`make package THEOS_PACKAGE_SCHEME=roothide` 输出 `iphoneos-arm64e` 的 deb。GitHub Actions 的 `Package` 工作流也可手动打包。仅支持 RootHide 隐根环境。
 
-需要 RootHide Theos 与 iOS SDK。`make package THEOS_PACKAGE_SCHEME=roothide` 输出 `iphoneos-arm64e` 的 `packages/*.deb`。GitHub Actions 中的 `Package` 工作流可手动运行，成功后在该次运行的 Artifacts 下载 deb。仅支持 RootHide 隐根环境。
-
-本工程尚需 RootHide 真机验证 SpringBoard 私有 API 的运行行为。首次测试请选非系统应用，先测试单项设置。
+Jetsam 配置保留 0～210 的统一档位。iOS 15 写入对应的 0～21 内核档位（例如配置 150 对应内核 15）；iOS 16 起使用 0～210。列表显示实际内核值。
 
 ## 来源与许可
 
-进程身份复核参考 [CPUOverloadKiller](https://github.com/moxuan1121/CPUOverloadKiller)，按 GPL-3.0 许可使用并作了改动；原 CPU 采样代码现已删除。MemoryControlRe 的重构源码来自本次提供的本地工程；历史版本使用过 StayAliveLite 重构源码，当前已移除其保活模块。本项目按 [GPL-3.0](LICENSE) 发布。
+CPU 采样策略与进程身份复核参考 CPUOverloadKiller，按 [GPL-3.0](LICENSE) 许可使用并作了改动。内存与优先级模块参考本次提供的 MemoryControlRe 重构源码。项目按 GPL-3.0 发布。

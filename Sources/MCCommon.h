@@ -12,6 +12,7 @@ extern NSString *const MCDomain;
 /** SpringBoard tweak 与守护进程之间的 Darwin 通知名。 */
 extern NSString *const MCApplyLimitsNotification;
 extern NSString *const MCProcessChangedNotification;
+extern NSString *const MCCPUFrontmostNotification;
 /** 状态回写文件（偏好面板读取以显示 PID）。 */
 extern NSString *const MCStatusFileName;
 /** 守护进程日志文件名，位于 MobileSupport 或 jbroot 下的 Library/Logs。 */
@@ -29,8 +30,13 @@ extern const double  MCDefaultLogSizeLimitMB;   /* 2 MB  */
 @property (nonatomic, assign) NSInteger memLimitInactive;  /* MB；同上 */
 @property (nonatomic, assign) NSInteger jetsamPriority;    /* -1=不动，0=交还系统 */
 @property (nonatomic, assign) NSInteger niceValue;         /* PRIO_MIN..PRIO_MAX */
-@property (nonatomic, assign) NSInteger cpuThreshold;     /* 前后台 CPU 百分比；0=关闭 */
-@property (nonatomic, assign) NSInteger cpuDuration;      /* 内核 CPU 监控窗口秒数 */
+@property (nonatomic, assign) NSInteger cpuThreshold;     /* 进程 CPU 百分比；0=关闭 */
+@property (nonatomic, assign) NSInteger cpuDuration;      /* 连续超限秒数 */
+@property (nonatomic, assign) NSInteger cpuIdleSample;
+@property (nonatomic, assign) NSInteger cpuNearRatio;
+@property (nonatomic, assign) NSInteger cpuNearSample;
+@property (nonatomic, assign) NSInteger cpuExceedSample;
+@property (nonatomic, assign) BOOL cpuBackground;
 
 @property (nonatomic, copy)   NSString *remark;       /* 偏好面板显示名 */
 
