@@ -135,12 +135,22 @@ NSArray<NSString *> *MCPriorityNames(void) {
     NSString *state = samePid && [status[@"JetsamState"] isKindOfClass:NSString.class] &&
         [status[@"cfg"][@"JetsamPriority"] integerValue] == configuredPriority
         ? status[@"JetsamState"] : @"等待更新";
-    NSString *jetsamState = pid > 0 && configuredPriority > 0
-        ? [NSString stringWithFormat:@"（%@）", state] : @"";
-    return [NSString stringWithFormat:@"p=%@%@、n=%@、pid=%@\np=%ld、a=%ld、i=%ld、n=%ld",
-        actualPriority, jetsamState, actualNice, pid ? [@(pid) stringValue] : @"?",
+    NSString *jetsamState = configuredPriority <= 0 ? @"➖" : pid > 0
+        ? ([state isEqualToString:@"已生效"] ? @"✅" :
+           ([state isEqualToString:@"写入失败"] || [state isEqualToString:@"未达目标"]) ? @"❌" :
+           [NSString stringWithFormat:@"（%@）", state]) : @"";
+    NSInteger configuredNice = [cfg[@"NiceValue"] integerValue];
+    NSString *niceResult = samePid && [status[@"NiceState"] isKindOfClass:NSString.class] &&
+        [status[@"cfg"][@"NiceValue"] integerValue] == configuredNice
+        ? status[@"NiceState"] : @"等待更新";
+    NSString *niceState = configuredNice == 0 ? @"➖" : pid > 0
+        ? ([niceResult isEqualToString:@"已生效"] ? @"✅" :
+           [niceResult isEqualToString:@"未达目标"] ? @"❌" :
+           [NSString stringWithFormat:@"（%@）", niceResult]) : @"";
+    return [NSString stringWithFormat:@"p=%@%@、n=%@%@、pid=%@\np=%ld、a=%ld、i=%ld、n=%ld",
+        actualPriority, jetsamState, actualNice, niceState, pid ? [@(pid) stringValue] : @"?",
         (long)configuredPriority, (long)[cfg[@"MemLimitActive"] integerValue],
-        (long)[cfg[@"MemLimitInactive"] integerValue], (long)[cfg[@"NiceValue"] integerValue]];
+        (long)[cfg[@"MemLimitInactive"] integerValue], (long)configuredNice];
 }
 
 @end

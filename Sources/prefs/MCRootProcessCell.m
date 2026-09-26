@@ -18,7 +18,26 @@
 
 - (void)refreshCellContentsWithSpecifier:(PSSpecifier *)specifier {
     [super refreshCellContentsWithSpecifier:specifier];
-    self.detailTextLabel.text = [specifier propertyForKey:@"subtitle"];
+    NSString *subtitle = [specifier propertyForKey:@"subtitle"] ?: @"";
+    NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:subtitle];
+    UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration
+        configurationWithPointSize:self.detailTextLabel.font.pointSize weight:UIImageSymbolWeightSemibold];
+    NSArray<NSString *> *markers = @[@"✅", @"❌", @"➖"];
+    NSArray<NSString *> *names = @[@"checkmark.circle.fill", @"xmark.circle.fill", @"minus.circle.fill"];
+    NSArray<UIColor *> *colors = @[UIColor.systemGreenColor, UIColor.systemRedColor, UIColor.secondaryLabelColor];
+    for (NSUInteger i = 0; i < markers.count; i++) {
+        UIImage *symbol = [[UIImage systemImageNamed:names[i] withConfiguration:config]
+            imageWithTintColor:colors[i] renderingMode:UIImageRenderingModeAlwaysOriginal];
+        if (!symbol) continue;
+        NSTextAttachment *check = [NSTextAttachment new];
+        check.image = symbol;
+        check.bounds = CGRectMake(0, -2, symbol.size.width, symbol.size.height);
+        NSAttributedString *icon = [NSAttributedString attributedStringWithAttachment:check];
+        NSRange range;
+        while ((range = [text.string rangeOfString:markers[i]]).location != NSNotFound)
+            [text replaceCharactersInRange:range withAttributedString:icon];
+    }
+    self.detailTextLabel.attributedText = text;
     self.accessoryType = UITableViewCellAccessoryDetailButton;
 }
 

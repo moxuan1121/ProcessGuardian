@@ -127,7 +127,10 @@ static void MCPublishStatus(BOOL enabled, NSDictionary *configs, NSDictionary *p
         }
         errno = 0;
         int nice = pid > 0 ? getpriority(PRIO_PROCESS, pid) : 0;
-        if (pid > 0 && errno == 0) entry[@"ActualNice"] = @(nice);
+        BOOL hasNice = pid > 0 && errno == 0;
+        if (hasNice) entry[@"ActualNice"] = @(nice);
+        if (cfg.niceValue != 0)
+            entry[@"NiceState"] = !hasNice ? @"读取失败" : nice == cfg.niceValue ? @"已生效" : @"未达目标";
         processes[key] = entry;
     }
     if ([MCCommon writeStatus:@{
