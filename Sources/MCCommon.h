@@ -27,7 +27,7 @@ extern const double  MCDefaultLogSizeLimitMB;   /* 2 MB  */
 @property (nonatomic, copy)   NSString *key;          /* AppConfigs 里的键：进程名或包名 */
 
 /* 数值型 */
-@property (nonatomic, assign) NSInteger memLimitActive;    /* MB；0=不设置，-1=不受限 */
+@property (nonatomic, assign) NSInteger memLimitActive;    /* MB；0=不设置，-1=系统默认 */
 @property (nonatomic, assign) NSInteger memLimitInactive;  /* MB；同上 */
 @property (nonatomic, assign) NSInteger jetsamPriority;    /* -1=不动，0=交还系统 */
 @property (nonatomic, assign) NSInteger niceValue;         /* PRIO_MIN..PRIO_MAX */

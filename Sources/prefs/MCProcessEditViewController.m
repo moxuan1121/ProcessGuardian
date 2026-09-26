@@ -159,7 +159,7 @@ typedef NS_ENUM(NSInteger, MCEditRowKind) {
                      footer:nil key:@"Remark"]];
 
     [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"活跃内存限制 (MB)"
-                     footer:@"0 让插件不要设置\n-1 表示不受限制(会分配当前设备最高的用户内存)\n或自定义填写最大内存限制(MB）"
+                     footer:@"0 让插件不要设置\n-1 恢复系统默认上限\n或自定义填写最大内存限制 (MB)"
                      key:@"MemLimitActive"]];
     [limits addObject:[MCEditRow rowWithKind:MCEditRowNumber title:@"后台内存限制 (MB)"
                      footer:@"同上，作用于进程处于后台时" key:@"MemLimitInactive"]];

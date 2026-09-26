@@ -6,8 +6,14 @@
 #undef main
 
 static NSDictionary *paths;
-static int enumerations, pathReads, priorityWrites;
+static int enumerations, pathReads, priorityWrites, memWrites;
 static int32_t actualPriority;
+static memorystatus_memlimit_properties_t actualMem = {
+    .memlimit_active = 768, .memlimit_inactive = 768,
+    .memlimit_active_attr = MEMORYSTATUS_MEMLIMIT_ATTR_FATAL,
+    .memlimit_inactive_attr = MEMORYSTATUS_MEMLIMIT_ATTR_FATAL,
+};
+static memorystatus_memlimit_properties_t lastMemWrite;
 
 int proc_listpids(uint32_t type, uint32_t info, void *buffer, int size) {
     pid_t pids[] = {900102, 900101, 900103}; // Extension appears before the main app in the OS list.
@@ -32,6 +38,22 @@ int memorystatus_control(uint32_t command, int32_t pid, uint32_t flags, void *bu
     if (command == MEMORYSTATUS_CMD_SET_PRIORITY_PROPERTIES) {
         priorityWrites++;
         actualPriority = ((memorystatus_priority_properties_t *)buffer)->priority;
+    }
+    if (command == MEMORYSTATUS_CMD_GET_MEMLIMIT_PROPERTIES) {
+        *(memorystatus_memlimit_properties_t *)buffer = actualMem;
+    }
+    if (command == MEMORYSTATUS_CMD_SET_MEMLIMIT_PROPERTIES) {
+        memWrites++;
+        lastMemWrite = *(memorystatus_memlimit_properties_t *)buffer;
+        actualMem = lastMemWrite;
+        if (actualMem.memlimit_active <= 0) {
+            actualMem.memlimit_active = 768;
+            actualMem.memlimit_active_attr = MEMORYSTATUS_MEMLIMIT_ATTR_FATAL;
+        }
+        if (actualMem.memlimit_inactive <= 0) {
+            actualMem.memlimit_inactive = 768;
+            actualMem.memlimit_inactive_attr = MEMORYSTATUS_MEMLIMIT_ATTR_FATAL;
+        }
     }
     return 0;
 }
@@ -88,6 +110,8 @@ int main(void) {
            [shown[@"ActualJetsam"] intValue] == MCTargetJetsamPriority(150));
     MCRunSweep(NO);
     assert(enumerations == 2 && priorityWrites == 1); // Unchanged target is not rewritten.
+    MCRunSweep(YES);
+    assert(priorityWrites == 1); // Forced patrol also skips an unchanged Jetsam target.
     assert(([@{@"Enabled": @YES, @"AppConfigs": @{@"com.example.app": @{@"JetsamPriority": @-1}}}
         writeToFile:[MCCommon preferencesPlistPath] atomically:YES]));
     MCRunSweep(NO);
@@ -97,6 +121,21 @@ int main(void) {
     previous = enumerations;
     MCRunSweep(NO);
     assert(enumerations == previous); // Disabled/unchanged events do no process scan.
+    NSDictionary *memoryPrefs = @{@"Enabled": @YES, @"AppConfigs": @{@"com.example.app":
+        @{@"MemLimitActive": @0, @"MemLimitInactive": @1024}}};
+    assert([memoryPrefs writeToFile:[MCCommon preferencesPlistPath] atomically:YES]);
+    MCRunSweep(NO);
+    assert(memWrites == 1 && lastMemWrite.memlimit_active == 768 &&
+           lastMemWrite.memlimit_inactive == 1024);
+    MCRunSweep(YES);
+    assert(memWrites == 1); // Unchanged limits are not rewritten.
+    actualMem.memlimit_inactive = 900;
+    MCRunSweep(YES);
+    assert(memWrites == 2 && actualMem.memlimit_inactive == 1024);
+    assert(([@{@"Enabled": @NO, @"AppConfigs": @{}} writeToFile:[MCCommon preferencesPlistPath] atomically:YES]));
+    MCRunSweep(NO);
+    assert(memWrites == 3 && lastMemWrite.memlimit_active == 768 &&
+           lastMemWrite.memlimit_inactive == MC_MEMLIMIT_DEFAULT);
     sLogSizeLimitMB = 0.0001;
     MCLog(@"A log entry longer than the configured limit must rotate the file before append.");
     NSString *rotated = [NSString stringWithContentsOfFile:sLogFile encoding:NSUTF8StringEncoding error:nil];

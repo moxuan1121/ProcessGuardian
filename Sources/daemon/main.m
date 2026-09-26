@@ -172,11 +172,27 @@ static BOOL MCRestoreProcess(MCProcessConfig *cfg, pid_t pid, NSInteger jetsamFl
     BOOL restored = YES;
 
     if (cfg.memLimitActive || cfg.memLimitInactive) {
-        memorystatus_memlimit_properties_t ml = {
-            .memlimit_active = MC_MEMLIMIT_DEFAULT,
-            .memlimit_inactive = MC_MEMLIMIT_DEFAULT,
-        };
-        memorystatus_control(MEMORYSTATUS_CMD_SET_MEMLIMIT_PROPERTIES, pid, 0, &ml, sizeof(ml));
+        memorystatus_memlimit_properties_t ml = {0};
+        BOOL partial = !cfg.memLimitActive || !cfg.memLimitInactive;
+        if (partial && memorystatus_control(MEMORYSTATUS_CMD_GET_MEMLIMIT_PROPERTIES, pid, 0,
+                                            &ml, sizeof(ml)) != 0) {
+            MCLog(@"[恢复] 内存上限回读失败 PID:%d errno:%d", pid, errno);
+            restored = NO;
+        } else {
+            if (cfg.memLimitActive) {
+                ml.memlimit_active = MC_MEMLIMIT_DEFAULT;
+                ml.memlimit_active_attr = 0;
+            }
+            if (cfg.memLimitInactive) {
+                ml.memlimit_inactive = MC_MEMLIMIT_DEFAULT;
+                ml.memlimit_inactive_attr = 0;
+            }
+            if (memorystatus_control(MEMORYSTATUS_CMD_SET_MEMLIMIT_PROPERTIES, pid, 0,
+                                     &ml, sizeof(ml)) != 0) {
+                MCLog(@"[恢复] 内存上限撤销失败 PID:%d errno:%d", pid, errno);
+                restored = NO;
+            }
+        }
     }
     if (cfg.jetsamPriority != -1) {
         memorystatus_priority_properties_t pp = {0};
@@ -203,11 +219,27 @@ static BOOL MCRestoreProcess(MCProcessConfig *cfg, pid_t pid, NSInteger jetsamFl
 static void MCApplyMemLimits(MCProcessConfig *cfg, pid_t pid) {
     if (cfg.memLimitActive == 0 && cfg.memLimitInactive == 0) return;
 
-    memorystatus_memlimit_properties_t ml = {0};
-    ml.memlimit_active   = (int32_t)cfg.memLimitActive;
-    ml.memlimit_inactive = (int32_t)cfg.memLimitInactive;
-    ml.memlimit_active_attr = MEMORYSTATUS_MEMLIMIT_ATTR_FATAL;
-    ml.memlimit_inactive_attr = MEMORYSTATUS_MEMLIMIT_ATTR_FATAL;
+    memorystatus_memlimit_properties_t before = {0};
+    BOOL read = memorystatus_control(MEMORYSTATUS_CMD_GET_MEMLIMIT_PROPERTIES, pid, 0,
+                                     &before, sizeof(before)) == 0;
+    if (!read && (!cfg.memLimitActive || !cfg.memLimitInactive)) {
+        MCLog(@"[内存限制] 无法回读未设置的一侧，跳过写入 PID:%d errno:%d", pid, errno);
+        return;
+    }
+    memorystatus_memlimit_properties_t ml = before;
+    if (cfg.memLimitActive) {
+        ml.memlimit_active = (int32_t)cfg.memLimitActive;
+        ml.memlimit_active_attr = MEMORYSTATUS_MEMLIMIT_ATTR_FATAL;
+    }
+    if (cfg.memLimitInactive) {
+        ml.memlimit_inactive = (int32_t)cfg.memLimitInactive;
+        ml.memlimit_inactive_attr = MEMORYSTATUS_MEMLIMIT_ATTR_FATAL;
+    }
+    if (read && cfg.memLimitActive >= 0 && cfg.memLimitInactive >= 0 &&
+        before.memlimit_active == ml.memlimit_active &&
+        before.memlimit_inactive == ml.memlimit_inactive &&
+        before.memlimit_active_attr == ml.memlimit_active_attr &&
+        before.memlimit_inactive_attr == ml.memlimit_inactive_attr) return;
 
     int err = memorystatus_control(MEMORYSTATUS_CMD_SET_MEMLIMIT_PROPERTIES, pid, 0,
                                    &ml, sizeof(ml));
@@ -229,14 +261,14 @@ static void MCApplyMemLimits(MCProcessConfig *cfg, pid_t pid) {
     MCLog(@"[内存限制] 目标 Act:%d Inact:%d | 回读 Act:%d Inact:%d",
           ml.memlimit_active, ml.memlimit_inactive,
           back.memlimit_active, back.memlimit_inactive);
-    if (back.memlimit_active != ml.memlimit_active ||
-        back.memlimit_inactive != ml.memlimit_inactive)
-        MCLog(@"[内核] ：已被系统覆盖 (设置:%d 实际:%d)",
-              ml.memlimit_active, back.memlimit_active);
+    if ((cfg.memLimitActive > 0 && back.memlimit_active != ml.memlimit_active) ||
+        (cfg.memLimitInactive > 0 && back.memlimit_inactive != ml.memlimit_inactive))
+        MCLog(@"[内存限制] 回读未达目标 PID:%d Act:%d Inact:%d", pid,
+              back.memlimit_active, back.memlimit_inactive);
 }
 
 /* jetsam 优先级。-1=不动，0=交还系统接管，其余=强设。 */
-static NSInteger MCApplyJetsamPriority(MCProcessConfig *cfg, pid_t pid) {
+static NSInteger MCApplyJetsamPriority(MCProcessConfig *cfg, pid_t pid, NSInteger retainedFlags) {
     if (cfg.jetsamPriority == -1) {
         MCLog(@"[内存优先级] 目标:-1 -> 未设置, 跳过");
         return -1;
@@ -249,6 +281,9 @@ static NSInteger MCApplyJetsamPriority(MCProcessConfig *cfg, pid_t pid) {
         MCLog(@"[内存优先级] 无效配置 PID:%d 配置:%ld，未写入", pid, (long)cfg.jetsamPriority);
         return -1;
     }
+    int32_t actual = 0;
+    if (target > 0 && retainedFlags >= 0 && MCGetKernelPriority(pid, &actual) && actual == target)
+        return retainedFlags;
     if (target != cfg.jetsamPriority)
         MCLog(@"[内存优先级] 档位转换 PID:%d 配置:%ld -> 内核目标:%d", pid, (long)cfg.jetsamPriority, target);
     memorystatus_priority_properties_t pp = { .priority = target };
@@ -268,7 +303,7 @@ static NSInteger MCApplyJetsamPriority(MCProcessConfig *cfg, pid_t pid) {
         return -1;
     }
 
-    int32_t actual = 0;
+    actual = 0;
     if (!MCReadKernelPriority(pid, &actual)) {
         MCLog(@"[内存优先级] 写入已接受，但回读失败，无法确认生效 PID:%d", pid);
         return flags;
@@ -316,9 +351,9 @@ static void MCApplyElevatedInactive(MCProcessConfig *cfg, pid_t pid) {
     memorystatus_control(MEMORYSTATUS_CMD_SET_PROCESS_IS_FREEZABLE, pid, 0, NULL, 0);
 }
 
-static NSInteger MCApplyOne(MCProcessConfig *cfg, pid_t pid) {
+static NSInteger MCApplyOne(MCProcessConfig *cfg, pid_t pid, NSInteger retainedFlags) {
     MCApplyMemLimits(cfg, pid);
-    NSInteger jetsamFlags = MCApplyJetsamPriority(cfg, pid);
+    NSInteger jetsamFlags = MCApplyJetsamPriority(cfg, pid, retainedFlags);
     MCApplyNice(cfg, pid);
     MCApplyElevatedInactive(cfg, pid);
     return jetsamFlags;
@@ -414,17 +449,20 @@ static void MCRunSweep(BOOL force) {
                 (MCGetKernelPriority(pid, &actual) && actual == MCTargetJetsamPriority(cfg.jetsamPriority))) continue;
         }
 
+        NSInteger retainedFlags = tracked.intValue == pid ?
+            [sApplied[key][@"jetsamFlags"] integerValue] : -1;
         if (tracked.intValue == pid) {
             MCProcessConfig *previous = MCSnapshotConfigFor(key);
             if ((previous.niceValue && !cfg.niceValue) ||
                 (previous.jetsamPriority != -1 && previous.jetsamPriority != cfg.jetsamPriority) ||
                 (previous.memLimitActive && !cfg.memLimitActive) ||
-                (previous.memLimitInactive && !cfg.memLimitInactive))
-                if (!MCRestoreProcess(previous, pid,
-                                      [sApplied[key][@"jetsamFlags"] integerValue])) continue;
+                (previous.memLimitInactive && !cfg.memLimitInactive)) {
+                if (!MCRestoreProcess(previous, pid, retainedFlags)) continue;
+                retainedFlags = -1;
+            }
         }
         MCLog(@"[守护] 目标: %@ | PID: %d", key, pid);
-        NSInteger jetsamFlags = MCApplyOne(cfg, pid);
+        NSInteger jetsamFlags = MCApplyOne(cfg, pid, retainedFlags);
         MCRememberKey(key, pid, cfg, jetsamFlags);
         if (jetsamFlags >= 0 && cfg.jetsamPriority > 0)
             MCScheduleJetsamRecheck(key, sApplied[key]);
@@ -456,7 +494,7 @@ static void MCScheduleJetsamRecheck(NSString *key, NSDictionary *record) {
             int32_t actual = 0, target = MCTargetJetsamPriority(cfg.jetsamPriority);
             if (target < 0 || !MCReadKernelPriority(pid, &actual) || actual == target) return;
             MCLog(@"[内存优先级] 延时回读发现覆盖 PID:%d 目标:%d 实际:%d，重新写入", pid, target, actual);
-            NSInteger flags = MCApplyJetsamPriority(cfg, pid);
+            NSInteger flags = MCApplyJetsamPriority(cfg, pid, [record[@"jetsamFlags"] integerValue]);
             if (flags >= 0 && flags != [record[@"jetsamFlags"] integerValue]) {
                 NSMutableDictionary *updated = [record mutableCopy];
                 updated[@"jetsamFlags"] = @(flags);
